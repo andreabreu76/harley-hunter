@@ -2698,7 +2698,8 @@ git commit -m "feat: sqlite persistence with deduplication and price history"
 - Produces:
   - `source.Source` interface com `Name() string` e `Fetch(ctx context.Context) ([]model.RawListing, error)`
   - `source.defaultUserAgent`, a string de User-Agent que todas as fontes HTTP usam
-  - `source.NewOLX(client *http.Client, baseURLs []string) *source.OLX`
+  - `source.NewOLX(fetcher source.PageFetcher, baseURLs []string) *source.OLX`
+  - `source.PageFetcher` e `source.NewBrowserFetcher(devtoolsURL string) *source.BrowserFetcher`
   - `source.ParseOLX(body io.Reader) ([]model.RawListing, error)` — exportada para permitir teste sem rede
 
 - [ ] **Step 1: Capturar a fixture real**
@@ -2782,6 +2783,14 @@ func stringReader(s string) io.Reader {
 ```
 
 O segundo teste é o que impede a falha silenciosa: página de bloqueio precisa virar erro visível, não lista vazia.
+
+A escolha do array de anúncios dentro do payload precisa ser por contexto, não
+pela primeira ocorrência que decodificar. A página traz mais de uma lista com a
+mesma chave — a de resultados e a da seleção VIP do topo — e hoje a de
+resultados vem primeiro apenas por acidente de ordem. Se a OLX passar a popular
+a seleção VIP numa busca legitimamente vazia, os itens dela seriam devolvidos
+como se fossem o resultado, que é a falha silenciosa desta task ao contrário:
+em vez de lista vazia onde havia anúncios, anúncios onde a busca não achou nada.
 
 - [ ] **Step 3: Rodar o teste e confirmar a falha**
 
