@@ -949,6 +949,9 @@ func TestDetectBike(t *testing.T) {
 		{"Harley-Davidson Electra-Glide 2015", model.BikeElectraGlide, model.VariantUnknown},
 		{"Harley FLHX Street Glide 2015", model.BikeStreetGlide, model.VariantBase},
 		{"Harley FLTRX Road Glide 2015", model.BikeRoadGlide, model.VariantBase},
+		{"Harley FLTRX-SE 2015", model.BikeRoadGlide, model.VariantCVO},
+		{"Harley FLTRX SE 2015", model.BikeRoadGlide, model.VariantCVO},
+		{"Harley FLHXSE 2015", model.BikeStreetGlide, model.VariantCVO},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -1033,13 +1036,28 @@ func DetectBike(text string) (string, string) {
 }
 
 func detectVariant(t, compact, cvoCode, specialCode string) string {
-	if strings.Contains(t, "cvo") || strings.Contains(t, cvoCode) {
+	if strings.Contains(t, "cvo") || containsCode(compact, cvoCode) {
 		return model.VariantCVO
 	}
-	if containsAny(t, compact, "special", "especial") || strings.Contains(t, specialCode) {
+	if containsAny(t, compact, "special", "especial") || containsCode(compact, specialCode) {
 		return model.VariantSpecial
 	}
 	return model.VariantBase
+}
+
+func containsCode(compact, code string) bool {
+	for from := 0; from <= len(compact)-len(code); {
+		offset := strings.Index(compact[from:], code)
+		if offset < 0 {
+			return false
+		}
+		end := from + offset + len(code)
+		if end >= len(compact) || compact[end] < 'a' || compact[end] > 'z' {
+			return true
+		}
+		from = from + offset + 1
+	}
+	return false
 }
 
 func isHarley(t string) bool {
@@ -1056,11 +1074,14 @@ func containsAny(t, compact string, needles ...string) bool {
 }
 ```
 
-Os códigos de variante são procurados apenas no texto com espaços, nunca na
-forma compacta. `"FLHX Street"` vira `"flhxstreet"` ao remover espaços, e essa
-string contém `flhxs`, o código da versão Special: uma FLHX base seria gravada
-como Special. A variante não altera o veredito, mas vai para o banco e para o
-dashboard.
+Os códigos de variante são procurados na forma compacta, mas exigindo que o
+código não seja seguido de letra. `"FLHX Street"` vira `"flhxstreet"`, que
+contém `flhxs` — o código da versão Special — e sem a checagem uma FLHX base
+seria gravada como Special. Procurar só no texto com espaços resolveria isso e
+abriria o buraco simétrico: `"FLTRX-SE"` e `"FLTRX SE"` deixariam de casar
+`fltrxse`, e este corpus hifeniza livremente em torno dos nomes. A fronteira é
+só à direita porque, na forma compacta, tudo vira uma palavra só e o caractere
+anterior é quase sempre uma letra do fabricante.
 
 A ordem do `switch` é a regra de correção: Electra Glide é testada antes de Road e Street porque o texto pode conter mais de um termo, e a variante mais específica precisa ganhar. O código `flhxse` é testado antes de `flhxs` pelo mesmo motivo.
 
@@ -2813,6 +2834,14 @@ func stringReader(s string) io.Reader {
 ```
 
 O segundo teste é o que impede a falha silenciosa: página de bloqueio precisa virar erro visível, não lista vazia.
+
+A mesma exigência vale no nível do campo, e não só no do contêiner. Se os cards
+aparecem mas nenhum produz um anúncio — porque o seletor de título ou o padrão
+de identificador deixou de casar — o resultado é uma lista vazia sem erro,
+indistinguível de uma busca que legitimamente não achou nada. Como cinco dos
+sete seletores já mudaram uma vez, esse é o modo de falha esperado no próximo
+deploy da fonte. Card individual malformado continua sendo pulado em silêncio;
+o que vira erro é a rodada inteira encontrar cards e não extrair nenhum.
 
 A escolha do array de anúncios dentro do payload precisa ser por contexto, não
 pela primeira ocorrência que decodificar. A página traz mais de uma lista com a
