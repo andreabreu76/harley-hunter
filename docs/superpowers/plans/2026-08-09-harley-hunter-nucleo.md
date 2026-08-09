@@ -4138,6 +4138,16 @@ voltar um dia); `ALERT_TO`, `ALERT_CHANNEL` e as variáveis `TWILIO_*` deixam de
 ser lidas, e a coleta não avisa mais sobre credencial ausente porque não há
 credencial a ter.
 
+AJUSTE APÓS USO REAL: o dono clicou no banner esperando abrir o anúncio, e o
+`display notification` do AppleScript não suporta ação de clique — o macOS abre
+o dono do processo, o que na prática deu uma janela do Finder. O transporte
+passa a ser o `terminal-notifier` (instalado via Homebrew), cujo `-open <url>`
+abre o anúncio no navegador padrão ao clicar. O `osascript` permanece como
+reserva silenciosa quando o binário não existe, sem ação de clique. Isso muda a
+interface: `Notifier.Send` recebe `Alert{Message, URL string}` em vez de string,
+porque o transporte precisa da URL separada do texto. No primeiro banner o macOS
+pede permissão de notificação para o terminal-notifier — conceder uma vez.
+
 Como o `launchd` roda o agente na sessão gráfica do usuário, o `osascript`
 exibe o banner normalmente. O clique no banner não abre URL — o destino do
 clique é o dashboard, que é onde os detalhes moram.
