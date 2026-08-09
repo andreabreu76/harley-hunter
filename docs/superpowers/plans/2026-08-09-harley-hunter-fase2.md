@@ -102,7 +102,7 @@ O laço `Fetch`/`fetchOne` está duplicado verbatim entre OLX e Mercado Livre
 
 **Files:**
 - Create: `internal/source/fetchloop.go` (+ teste)
-- Modify: `olx.go`, `mercadolivre.go`, `webmotors.go`, `icarros.go` para consumi-lo
+- Modify: `olx.go`, `mercadolivre.go`, `webmotors.go`, `mobiauto.go` para consumi-lo
 
 **Interfaces:**
 - Produces: `source.fetchPages(ctx, fetcher, urls, delay, parse func(io.Reader) ([]model.RawListing, error)) ([]model.RawListing, error)` — preservando: checagem de ctx antes da primeira busca, delay entre buscas, resultados parciais retornados junto com o erro.
