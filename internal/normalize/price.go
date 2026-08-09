@@ -24,33 +24,49 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
-		if isMileageWord(m[2]) {
-			continue
-		}
+	if m := priceWithSymbol.FindStringSubmatch(s); m != nil {
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*1000*100 + 0.5))
+			if cents, ok := plausible(int64(value*100 + 0.5)); ok {
+				return cents, true
+			}
 		}
 	}
 
-	if m := priceWithSymbol.FindStringSubmatch(s); m != nil {
+	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
+		if isNonPriceWord(m[2]) {
+			continue
+		}
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*100 + 0.5))
+			if cents, ok := plausible(int64(value*1000*100 + 0.5)); ok {
+				return cents, true
+			}
 		}
 	}
 
 	if m := bareNumber.FindStringSubmatch(s); m != nil {
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*100 + 0.5))
+			if cents, ok := plausible(int64(value*100 + 0.5)); ok {
+				return cents, true
+			}
 		}
 	}
 
 	return 0, false
 }
 
-func isMileageWord(s string) bool {
+var nonPricePrefixes = []string{
+	"km", "quil", "curtid", "seguidor", "visualiza", "like", "view",
+	"inscrit", "comentari", "compartilh", "avalia",
+}
+
+func isNonPriceWord(s string) bool {
 	s = strings.ToLower(s)
-	return strings.HasPrefix(s, "km") || strings.HasPrefix(s, "quil")
+	for _, prefix := range nonPricePrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func decimalize(s string) string {

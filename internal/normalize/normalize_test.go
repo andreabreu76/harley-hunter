@@ -166,7 +166,7 @@ func TestNormalizeIgnoresMoreFiscalYearShapes(t *testing.T) {
 	}
 	for _, text := range cases {
 		t.Run(string([]rune(text)[:12]), func(t *testing.T) {
-			l := Normalize(model.RawListing{Source: "instagram", ExternalID: text[:8], RawText: text})
+			l := Normalize(model.RawListing{Source: "instagram", ExternalID: string([]rune(text)[:8]), RawText: text})
 			if l.Year == nil || *l.Year != 2015 {
 				t.Errorf("Year = %v, want 2015", l.Year)
 			}
