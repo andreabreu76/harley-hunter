@@ -11,6 +11,7 @@ import (
 	"github.com/andreabreu76/harley-hunter/internal/match"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/normalize"
+	"github.com/andreabreu76/harley-hunter/internal/notify"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
 
@@ -32,6 +33,8 @@ const (
 	defaultTimeout      = 90 * time.Second
 	defaultConcurrency  = 4
 )
+
+const DefaultSMSPerRun = 5
 
 type Source interface {
 	Name() string
@@ -131,6 +134,38 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 	}
 	report.SharedCause = sharedCause(report.Results)
 	return report, nil
+}
+
+func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (int, error) {
+	if limit <= 0 {
+		limit = DefaultSMSPerRun
+	}
+	pending, err := s.PendingNotifications(limit)
+	if err != nil {
+		return 0, err
+	}
+
+	sent := 0
+	seen := make(map[string]bool, len(pending))
+	for _, row := range pending {
+		if row.Fingerprint != "" && seen[row.Fingerprint] {
+			if err := s.MarkNotified(row.ID); err != nil {
+				return sent, err
+			}
+			continue
+		}
+		if err := n.Send(ctx, notify.FormatAlert(row)); err != nil {
+			return sent, fmt.Errorf("sending alert for listing %d: %w", row.ID, err)
+		}
+		if err := s.MarkNotified(row.ID); err != nil {
+			return sent, err
+		}
+		if row.Fingerprint != "" {
+			seen[row.Fingerprint] = true
+		}
+		sent++
+	}
+	return sent, nil
 }
 
 func fetchSafely(ctx context.Context, src Source) (items []model.RawListing, err error) {

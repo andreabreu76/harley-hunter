@@ -9,6 +9,7 @@ import (
 
 	"github.com/andreabreu76/harley-hunter/internal/config"
 	"github.com/andreabreu76/harley-hunter/internal/crawl"
+	"github.com/andreabreu76/harley-hunter/internal/notify"
 	"github.com/andreabreu76/harley-hunter/internal/source"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
@@ -55,7 +56,22 @@ func runCrawl(cfg config.Config) error {
 		return err
 	}
 	printReport(cfg, report, time.Since(started))
+	sendAlerts(cfg, db)
 	return nil
+}
+
+func sendAlerts(cfg config.Config, db *store.Store) {
+	notifier, err := notify.NewTwilioFromEnv()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sms disabled: %v\n", err)
+		return
+	}
+	sent, err := crawl.Notify(context.Background(), db, notifier, cfg.Crawl.MaxSMSPerRun)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "sms delivery failed after %d messages: %v\n", sent, err)
+		return
+	}
+	fmt.Printf("sms sent: %d\n", sent)
 }
 
 func buildSources(cfg config.Config) ([]crawl.Source, error) {
