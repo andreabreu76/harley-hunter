@@ -36,6 +36,9 @@ func TestParseLocation(t *testing.T) {
 		{"Rio de Janeiro, Copacabana", "rio de janeiro", ""},
 		{"São Paulo, Moema", "sao paulo", ""},
 		{"Vila Mariana, São Paulo", "vila mariana", "SP"},
+		{"Campinas - São Paulo - Brasil", "campinas", "SP"},
+		{"Volta Redonda - Rio de Janeiro - Brasil", "volta redonda", "RJ"},
+		{"Santos, São Paulo (Zona Leste)", "santos", "SP"},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
