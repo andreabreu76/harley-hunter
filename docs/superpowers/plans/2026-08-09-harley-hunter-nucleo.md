@@ -947,6 +947,8 @@ func TestDetectBike(t *testing.T) {
 		{"Harley-Davidson Road-Glide Special 2015", model.BikeRoadGlide, model.VariantSpecial},
 		{"H-D Street Glide 2014", model.BikeStreetGlide, model.VariantBase},
 		{"Harley-Davidson Electra-Glide 2015", model.BikeElectraGlide, model.VariantUnknown},
+		{"Harley FLHX Street Glide 2015", model.BikeStreetGlide, model.VariantBase},
+		{"Harley FLTRX Road Glide 2015", model.BikeRoadGlide, model.VariantBase},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -1031,10 +1033,10 @@ func DetectBike(text string) (string, string) {
 }
 
 func detectVariant(t, compact, cvoCode, specialCode string) string {
-	if containsAny(t, compact, "cvo", cvoCode) {
+	if strings.Contains(t, "cvo") || strings.Contains(t, cvoCode) {
 		return model.VariantCVO
 	}
-	if containsAny(t, compact, "special", "especial", specialCode) {
+	if containsAny(t, compact, "special", "especial") || strings.Contains(t, specialCode) {
 		return model.VariantSpecial
 	}
 	return model.VariantBase
@@ -1053,6 +1055,12 @@ func containsAny(t, compact string, needles ...string) bool {
 	return false
 }
 ```
+
+Os códigos de variante são procurados apenas no texto com espaços, nunca na
+forma compacta. `"FLHX Street"` vira `"flhxstreet"` ao remover espaços, e essa
+string contém `flhxs`, o código da versão Special: uma FLHX base seria gravada
+como Special. A variante não altera o veredito, mas vai para o banco e para o
+dashboard.
 
 A ordem do `switch` é a regra de correção: Electra Glide é testada antes de Road e Street porque o texto pode conter mais de um termo, e a variante mais específica precisa ganhar. O código `flhxse` é testado antes de `flhxs` pelo mesmo motivo.
 
@@ -1127,6 +1135,9 @@ func TestParseLocation(t *testing.T) {
 		{"Rio de Janeiro, Copacabana", "rio de janeiro", ""},
 		{"São Paulo, Moema", "sao paulo", ""},
 		{"Vila Mariana, São Paulo", "vila mariana", "SP"},
+		{"São Paulo Zona Sul", "sao paulo", "SP"},
+		{"Rio de Janeiro Zona Oeste", "rio de janeiro", "RJ"},
+		{"Curitiba Centro", "curitiba", "PR"},
 		{"Campinas - São Paulo - Brasil", "campinas", "SP"},
 		{"Volta Redonda - Rio de Janeiro - Brasil", "volta redonda", "RJ"},
 		{"Santos, São Paulo (Zona Leste)", "santos", "SP"},
@@ -1325,6 +1336,18 @@ func ParseLocation(s string) (string, string) {
 	}
 	if fallback != "" {
 		return fallback, state
+	}
+
+	for i, seg := range segments {
+		if i == stateIndex {
+			continue
+		}
+		if city, embedded := locationFromText(seg); city != "" {
+			if state == "" {
+				state = embedded
+			}
+			return city, state
+		}
 	}
 
 	start := len(segments) - 1
@@ -1822,6 +1845,13 @@ resolve dois casos de uma vez: `"Curitiba-PR"` escrito no corpo do anúncio pass
 a encontrar `curitiba`, e `"Embu-Guaçu"` encontra a entrada da tabela, que é
 grafada com espaço desde a Task 5. Sem essa normalização o caminho de texto
 livre rejeitaria exatamente a forma que o caminho estruturado aceita.
+
+O mesmo mecanismo serve de última tentativa em `ParseLocation`: quando nenhum
+segmento bate exatamente a tabela, procura-se uma cidade DENTRO do segmento.
+`"São Paulo Zona Sul"` é como o Mercado Livre nomeia a localização, e sem essa
+busca o texto inteiro vira uma "cidade" inexistente na tabela e devolve
+`outside` — a capital paulista, uma das três regiões-alvo, rejeitada por
+completo nessa fonte.
 
 A busca é por palavra inteira, não por substring. `mage` aparece dentro de
 `imagens`, e "mais imagens no WhatsApp" é frase corriqueira em anúncio — sem o
