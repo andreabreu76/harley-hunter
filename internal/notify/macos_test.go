@@ -86,6 +86,37 @@ func TestMacOSOmitsOpenWhenTheAlertHasNoURL(t *testing.T) {
 	}
 }
 
+func TestMacOSOnlyOpensHTTPSURLs(t *testing.T) {
+	cases := []struct {
+		url  string
+		open bool
+	}{
+		{"https://olx.com.br/abc", true},
+		{"HTTPS://olx.com.br/abc", true},
+		{"javascript:alert(document.cookie)", false},
+		{"file:///etc/passwd", false},
+		{"http://olx.com.br/abc", false},
+		{"data:text/html,<script>x</script>", false},
+	}
+
+	for _, tc := range cases {
+		got := sendVia(t, "/opt/homebrew/bin/terminal-notifier", Alert{Message: "teste", URL: tc.url})
+
+		opened := false
+		for i, a := range got.args {
+			if a == "-open" {
+				opened = true
+				if got.args[i+1] != tc.url {
+					t.Errorf("-open carries %q, want %q", got.args[i+1], tc.url)
+				}
+			}
+		}
+		if opened != tc.open {
+			t.Errorf("url %q: -open present = %v, want %v (the notifier hands the url to the shell open handler)", tc.url, opened, tc.open)
+		}
+	}
+}
+
 func TestMacOSFallsBackToOsascriptWithoutTheBinary(t *testing.T) {
 	got := sendVia(t, "", Alert{Message: "Street Glide 2014", URL: "https://olx.com.br/abc"})
 

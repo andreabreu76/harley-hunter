@@ -42,7 +42,7 @@ func newMacOS(lookPath func(string) (string, error), warn io.Writer) *MacOS {
 func (m *MacOS) Send(ctx context.Context, alert Alert) error {
 	if m.binaryPath != "" {
 		args := []string{"-title", alertTitle, "-message", alert.Message}
-		if alert.URL != "" {
+		if strings.HasPrefix(strings.ToLower(alert.URL), "https://") {
 			args = append(args, "-open", alert.URL)
 		}
 		args = append(args, "-sound", alertSound)
