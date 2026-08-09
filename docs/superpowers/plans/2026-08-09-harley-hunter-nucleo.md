@@ -2618,10 +2618,20 @@ escrita: `now.UTC()` no `Upsert`, `started.UTC()`/`finished.UTC()` no
 `RecordRun`. Todo texto gravado passa a terminar em `+00:00` e a ordem lexical
 volta a ser a ordem cronológica.
 
-`ORDER BY observed_at` também ganha `id` como desempate. Duas observações do
-mesmo anúncio na mesma coleta compartilham o `now`, e com empate no
-`observed_at` o SQLite não promete qual linha vem primeiro — sem o desempate,
-qual preço é "o primeiro já visto" fica indefinido.
+Todo `ORDER BY` sobre timestamp no pacote ganha `id` como desempate, na mesma
+direção da ordenação primária — as cinco consultas, não só as de
+`price_history`. Empate é o caso normal, não a exceção: uma coleta passa o mesmo
+`now` para todos os `Upsert` da rodada, então os anúncios daquele lote nascem com
+`first_seen_at` idêntico por construção.
+
+Sem o desempate, as consultas descendentes devolvem o empate ao contrário.
+Medido com cinco anúncios do mesmo lote, `ListByVerdict` (`DESC`) devolvia
+`[1 2 3 4 5]` em vez de `[5 4 3 2 1]`, e `RecentRunCounts` com `started_at`
+igual devolvia `[10 20 30 40]` — o inverso de "mais recente primeiro", que é o
+contrato da função. Não se perde dado: um anúncio empurrado para fora de uma
+página de `PendingNotifications` continua com `notified = 0` e entra na rodada
+seguinte. O que se perde é a ordem, justamente onde ela tinha acabado de ser
+consertada.
 
 `PRAGMA foreign_keys = ON` via `db.Exec` também não vale: pragma é por conexão,
 e o `database/sql` mantém um pool. O comando pega a conexão que estiver livre
