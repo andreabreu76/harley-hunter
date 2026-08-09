@@ -3608,6 +3608,14 @@ func HealthStatus(counts []int) string {
 }
 ```
 
+O dashboard pede um histórico bem maior que a janela de vazio. A janela decide
+há quantas rodadas a fonte está sem trazer nada; o volume histórico decide se
+ela já teve movimento. Se as duas lessem os mesmos cinco registros, uma fonte
+quebrada limparia o próprio alarme: depois de cinco rodadas zeradas o histórico
+visível seria só de zeros, a média de volume cairia abaixo do limiar e o estado
+voltaria a `ok` — a fonte pareceria mais saudável quanto mais tempo ficasse
+quebrada.
+
 `HealthStatus` só acusa suspeita quando a fonte tinha volume relevante antes: uma fonte que normalmente traz um ou dois anúncios não deve disparar alarme ao passar uma rodada vazia.
 
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
@@ -4089,12 +4097,22 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 	}
 
 	sent := 0
+	seen := make(map[string]bool, len(pending))
 	for _, row := range pending {
+		if row.Fingerprint != "" && seen[row.Fingerprint] {
+			if err := s.MarkNotified(row.ID); err != nil {
+				return sent, err
+			}
+			continue
+		}
 		if err := n.Send(ctx, notify.FormatAlert(row)); err != nil {
 			return sent, fmt.Errorf("sending alert for listing %d: %w", row.ID, err)
 		}
 		if err := s.MarkNotified(row.ID); err != nil {
 			return sent, err
+		}
+		if row.Fingerprint != "" {
+			seen[row.Fingerprint] = true
 		}
 		sent++
 	}
@@ -4105,6 +4123,13 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 Adicione `fmt` e `github.com/andreabreu76/harley-hunter/internal/notify` aos imports do pacote.
 
 `MarkNotified` só roda depois de o envio ter sucesso — é isso que garante o reenvio na rodada seguinte quando a Twilio falha.
+
+O envio deduplica por impressão digital dentro da rodada. A mesma moto costuma
+estar anunciada na OLX e no Mercado Livre ao mesmo tempo, e numa coleta real a
+mesma FLHX 2014 gerou impressão idêntica nas duas fontes: sem deduplicar seriam
+dois SMS para uma moto só. A cópia repetida é marcada como notificada mesmo sem
+envio, porque é o mesmo veículo e reenviá-la depois seria o mesmo alerta
+duplicado com atraso.
 
 - [ ] **Step 5: Ligar ao comando `crawl`**
 
@@ -4444,6 +4469,8 @@ type server struct {
 	healthTmpl *template.Template
 }
 
+const healthHistoryRuns = 30
+
 type sourceHealth struct {
 	Name   string
 	Status string
@@ -4526,7 +4553,7 @@ func (s *server) setState(w http.ResponseWriter, r *http.Request) {
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	var items []sourceHealth
 	for _, name := range s.sources {
-		counts, err := s.store.RecentRunCounts(name, 5)
+		counts, err := s.store.RecentRunCounts(name, healthHistoryRuns)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
