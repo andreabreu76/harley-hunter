@@ -40,7 +40,7 @@ func NewMercadoLivre(fetcher PageFetcher, baseURLs []string) *MercadoLivre {
 	return &MercadoLivre{fetcher: fetcher, baseURLs: baseURLs, delay: mlRequestDelay}
 }
 
-func (m *MercadoLivre) Name() string { return "mercadolivre" }
+func (m *MercadoLivre) Name() string { return model.SourceMercadoLivre }
 
 func (m *MercadoLivre) Fetch(ctx context.Context) ([]model.RawListing, error) {
 	var all []model.RawListing
@@ -111,7 +111,7 @@ func ParseMercadoLivre(body io.Reader) ([]model.RawListing, error) {
 		image, _ := card.Find(mlImageSelector).First().Attr("src")
 
 		listings = append(listings, model.RawListing{
-			Source:       "mercadolivre",
+			Source:       model.SourceMercadoLivre,
 			ExternalID:   strings.ReplaceAll(id, "-", ""),
 			URL:          mlCanonicalURL(href),
 			Title:        title,

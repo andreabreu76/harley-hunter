@@ -32,7 +32,7 @@ func NewOLX(fetcher PageFetcher, baseURLs []string) *OLX {
 	return &OLX{fetcher: fetcher, baseURLs: baseURLs, delay: olxRequestDelay}
 }
 
-func (o *OLX) Name() string { return "olx" }
+func (o *OLX) Name() string { return model.SourceOLX }
 
 func (o *OLX) Fetch(ctx context.Context) ([]model.RawListing, error) {
 	var all []model.RawListing
@@ -111,7 +111,7 @@ func ParseOLX(body io.Reader) ([]model.RawListing, error) {
 			continue
 		}
 		listings = append(listings, model.RawListing{
-			Source:       "olx",
+			Source:       model.SourceOLX,
 			ExternalID:   ad.ListID.String(),
 			URL:          ad.URL,
 			Title:        ad.Subject,

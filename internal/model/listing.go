@@ -9,6 +9,12 @@ const (
 )
 
 const (
+	SourceOLX          = "olx"
+	SourceMercadoLivre = "mercadolivre"
+	SourceWebmotors    = "webmotors"
+)
+
+const (
 	AxisModel    = "model"
 	AxisYear     = "year"
 	AxisPrice    = "price"
