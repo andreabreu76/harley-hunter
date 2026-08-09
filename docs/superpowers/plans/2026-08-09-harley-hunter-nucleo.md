@@ -444,6 +444,7 @@ func TestParsePrice(t *testing.T) {
 		{"R$ 1,00", 0, false},
 		{"12.000 km", 0, false},
 		{"12 mil km", 0, false},
+		{"42 mil km, valor 74 mil", 7400000, true},
 		{"12 mil kms", 0, false},
 		{"42 mil kms rodados", 0, false},
 		{"12 mil quilometros", 0, false},
@@ -466,6 +467,11 @@ func TestParsePrice(t *testing.T) {
 Os casos com `km` são o coração deste teste. `ParsePrice` recebe tanto o campo estruturado de preço quanto, como alternativa, o texto livre inteiro do anúncio — que quase sempre menciona quilometragem. Um filtro que simplesmente recusasse qualquer texto contendo "km" quebraria o caso `"Vendo Street Glide 15/15, 42.000 km, R$ 74.900"`, e um filtro ausente transformaria `"12 mil km"` em R$ 12.000. A implementação resolve isso pela ordem de reconhecimento, não por exclusão.
 
 O caso `"negociável"` também é deliberado: é a palavra mais comum em anúncio de moto e não pode ser confundida com preço indisponível.
+
+A varredura percorre TODAS as ocorrências de milhares em vez de olhar só a
+primeira. Anúncio real escreve `"42 mil km, valor 74 mil"`, com a quilometragem
+antes do preço; parar na primeira ocorrência descartaria o ramo inteiro e o
+preço se perderia.
 
 O guard de quilometragem reconhece prefixo, não token exato. Anúncio real escreve `"42 mil kms rodados"` e `"12 mil quilômetros"` tanto quanto `"12 mil km"`, e comparar com a string `"km"` deixaria os dois primeiros virarem preço. O prefixo `quil` cobre a forma acentuada porque o grupo `[a-z]*` do regex para no `ô`. Um anúncio sem preço cujo texto diz `"42 mil kms rodados"` viraria R$ 42.000 — dentro do teto, classificado como Match e disparando SMS por uma moto que sequer anunciou preço.
 
@@ -580,7 +586,10 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	if m := thousandsSuffix.FindStringSubmatch(s); m != nil && !isMileageWord(m[2]) {
+	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
+		if isMileageWord(m[2]) {
+			continue
+		}
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
 			return plausible(int64(value*1000*100 + 0.5))
 		}
@@ -1404,6 +1413,70 @@ func TestNormalizeLeavesMissingFieldsNil(t *testing.T) {
 	}
 }
 
+func TestNormalizeResolvesCityDeterministically(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "det1",
+		RawText:    "Street Glide 2015 em Sao Jose dos Pinhais, aceito troca",
+	}
+	first := Normalize(raw)
+	for i := 0; i < 50; i++ {
+		if got := Normalize(raw); got.City != first.City || got.Fingerprint != first.Fingerprint {
+			t.Fatalf("run %d gave %q/%s, first gave %q/%s", i, got.City, got.Fingerprint, first.City, first.Fingerprint)
+		}
+	}
+	if first.City != "sao jose dos pinhais" {
+		t.Errorf("City = %q, want sao jose dos pinhais", first.City)
+	}
+}
+
+func TestNormalizeCityMatchesWholeWordsOnly(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "word1",
+		RawText:    "Street Glide 2015, mais imagens no WhatsApp, Rio de Janeiro RJ",
+	}
+	if l := Normalize(raw); l.City != "rio de janeiro" {
+		t.Errorf("City = %q, want rio de janeiro", l.City)
+	}
+}
+
+func TestNormalizePrefersLongestCityMatch(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "long1",
+		RawText:    "Street Glide 2015, moto na Lapa, Sao Paulo capital",
+	}
+	l := Normalize(raw)
+	if l.City != "sao paulo" || l.State != "SP" {
+		t.Errorf("location = %q/%q, want sao paulo/SP", l.City, l.State)
+	}
+}
+
+func TestNormalizeIgnoresFiscalYears(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "fiscal1",
+		RawText:    "IPVA 2026 pago. Vendo Road Glide 2015, Curitiba - PR",
+	}
+	l := Normalize(raw)
+	if l.Year == nil || *l.Year != 2015 {
+		t.Errorf("Year = %v, want 2015", l.Year)
+	}
+}
+
+func TestNormalizeReadsPriceAfterMileage(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "price1",
+		RawText:    "Street Glide 2015, 42 mil km, valor 74 mil, Curitiba - PR",
+	}
+	l := Normalize(raw)
+	if l.PriceCents == nil || *l.PriceCents != 7400000 {
+		t.Errorf("PriceCents = %v, want 7400000", l.PriceCents)
+	}
+}
+
 func TestFingerprintIsStableAndDiscriminating(t *testing.T) {
 	year := 2015
 	km := 31200
@@ -1442,12 +1515,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
 )
 
 const mileageBucketSize = 5000
+
+var fiscalYear = regexp.MustCompile(`(?i)\b(ipva|licenciamento|crlv|seguro|financiamento)\s*(?:de\s*)?(19|20)\d{2}`)
 
 func Normalize(raw model.RawListing) model.Listing {
 	full := strings.TrimSpace(raw.Title + " " + raw.RawText)
@@ -1471,7 +1547,7 @@ func Normalize(raw model.RawListing) model.Listing {
 
 	if year, ok := ParseYear(raw.YearText); ok {
 		l.Year = &year
-	} else if year, ok := ParseYear(full); ok {
+	} else if year, ok := ParseYear(fiscalYear.ReplaceAllString(full, " ")); ok {
 		l.Year = &year
 	}
 
@@ -1492,12 +1568,41 @@ func Normalize(raw model.RawListing) model.Listing {
 
 func locationFromText(text string) (string, string) {
 	folded := Fold(text)
+	bestCity, bestState, bestIndex := "", "", 0
 	for city, state := range metroCities {
-		if strings.Contains(folded, city) {
-			return city, state
+		index := wordIndex(folded, city)
+		if index < 0 {
+			continue
+		}
+		if bestCity == "" || len(city) > len(bestCity) ||
+			(len(city) == len(bestCity) && index < bestIndex) {
+			bestCity, bestState, bestIndex = city, state, index
 		}
 	}
-	return "", ""
+	return bestCity, bestState
+}
+
+func wordIndex(text, term string) int {
+	for from := 0; from <= len(text)-len(term); {
+		offset := strings.Index(text[from:], term)
+		if offset < 0 {
+			return -1
+		}
+		start := from + offset
+		if !wordChar(text, start-1) && !wordChar(text, start+len(term)) {
+			return start
+		}
+		from = start + 1
+	}
+	return -1
+}
+
+func wordChar(text string, i int) bool {
+	if i < 0 || i >= len(text) {
+		return false
+	}
+	c := text[i]
+	return c == '-' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
 }
 
 func Fingerprint(l model.Listing) string {
@@ -1514,6 +1619,25 @@ func Fingerprint(l model.Listing) string {
 	return hex.EncodeToString(sum[:8])
 }
 ```
+
+`locationFromText` percorre um mapa, e a ordem de iteração de mapa em Go é
+aleatória por construção. Retornar a primeira cidade encontrada tornaria a
+função não determinística, e como a cidade entra no `Fingerprint`, a impressão
+digital mudaria entre execuções — destruindo exatamente a detecção de reanúncio
+que ela existe para fazer. A tabela colide consigo mesma (`pinhais` é sufixo de
+`sao jose dos pinhais`), então a colisão não é hipotética. O critério de escolha
+é determinístico: vence o nome mais longo e, em empate de tamanho, o de menor
+posição no texto.
+
+A busca é por palavra inteira, não por substring. `mage` aparece dentro de
+`imagens`, e "mais imagens no WhatsApp" é frase corriqueira em anúncio — sem o
+limite de palavra, o anúncio seria gravado como se estivesse em Magé. O critério
+de nome mais longo resolve o outro caso: em "moto na Lapa, São Paulo capital",
+`sao paulo` vence `lapa`, evitando que uma moto paulista seja gravada no Paraná.
+
+Anos fiscais são removidos antes de procurar o ano no texto livre. `"IPVA 2026
+pago. Vendo Road Glide 2015"` devolveria 2026, que o matcher rejeita de imediato
+— um anúncio dentro do alvo perdido por causa do ano do licenciamento.
 
 O `Fingerprint` agrupa quilometragem em faixas de 5.000 km porque o mesmo vendedor reanuncia com número redondo diferente ("31.200" vira "31 mil"), e exigir igualdade exata perderia todo reanúncio.
 
