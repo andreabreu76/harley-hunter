@@ -1,0 +1,10 @@
+database_path: hunter.db
+sources:
+  - olx
+  - mercadolivre
+match:
+  years: [2014, 2015]
+  max_price_cents: 7500000
+source_urls:
+  olx:
+    - https://www.olx.com.br/autos-e-pecas/motos?q=harley

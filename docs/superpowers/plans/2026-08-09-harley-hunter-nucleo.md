@@ -28,6 +28,7 @@
 |---|---|
 | `cmd/hunter/main.go` | despacho dos subcomandos `crawl` e `serve` |
 | `internal/model/listing.go` | tipos compartilhados `RawListing`, `Listing`, `Verdict` |
+| `internal/format/format.go` | separação de milhares, usada pelo SMS e pelo dashboard |
 | `internal/config/config.go` | carregamento do `config.yaml` |
 | `internal/normalize/price.go` | texto de preço para centavos |
 | `internal/normalize/year.go` | texto de ano para inteiro |
@@ -108,6 +109,21 @@ func TestLoadRejectsMissingFile(t *testing.T) {
 		t.Fatal("Load should return an error for a missing file")
 	}
 }
+
+func TestLoadRejectsEmptyMatchCriteria(t *testing.T) {
+	if _, err := Load("testdata/no-match.yaml"); err == nil {
+		t.Fatal("Load should reject a config with no match criteria")
+	}
+}
+```
+
+`internal/config/testdata/no-match.yaml` — um config sem a seção `match`, que
+deve ser recusado:
+
+```yaml
+database_path: hunter.db
+sources:
+  - olx
 ```
 
 `internal/config/testdata/config.yaml`:
@@ -127,6 +143,13 @@ crawl:
   max_concurrent: 4
   max_sms_per_run: 5
 ```
+
+Critérios de match vazios são recusados na carga, e não tratados como
+permissivos. Um `config.yaml` sem a seção `match` daria `Years: nil` e
+`MaxPriceCents: 0`, e nesse estado todo anúncio com ano e preço conhecidos é
+rejeitado: a coleta roda inteira, não levanta erro nenhum e não encontra nada.
+É o mesmo modo de falha silencioso que o painel de saúde das fontes existe para
+combater — o sistema parecendo funcionar enquanto está cego.
 
 - [ ] **Step 3: Rodar o teste e confirmar a falha**
 
@@ -178,6 +201,12 @@ func Load(path string) (Config, error) {
 	}
 	if len(cfg.Sources) == 0 {
 		return Config{}, fmt.Errorf("config has no sources enabled")
+	}
+	if len(cfg.Match.Years) == 0 {
+		return Config{}, fmt.Errorf("config has no target years")
+	}
+	if cfg.Match.MaxPriceCents <= 0 {
+		return Config{}, fmt.Errorf("config has no max price")
 	}
 	return cfg, nil
 }
@@ -443,6 +472,34 @@ func TestParsePrice(t *testing.T) {
 		{"R$ 1,00", 0, false},
 		{"12.000 km", 0, false},
 		{"12 mil km", 0, false},
+		{"42 mil km, valor 74 mil", 7400000, true},
+		{"1 mil curtidas, moto por 74 mil", 7400000, true},
+		{"20 mil seguidores no insta, vendo por 74 mil", 7400000, true},
+		{"3 mil curtidas no post, R$ 74.900", 7490000, true},
+		{"10 mil likes! Road Glide R$ 72.000", 7200000, true},
+		{"20 mil comentários, moto por 74 mil", 7400000, true},
+		{"Entrada de R$ 20.000, moto R$ 74.900", 7490000, true},
+		{"R$ 74.900, aceito entrada de R$ 20.000", 7490000, true},
+		{"Parcelas de R$ 1.800, valor total R$ 74.900", 7490000, true},
+		{"Moto R$ 74.900, troco por ate R$ 90.000", 7490000, true},
+		{"Street Glide R$ 74.900, aceito troca ate R$ 60.000", 7490000, true},
+		{"Road Glide R$ 72.000, avalio moto ate R$ 95.000", 7200000, true},
+		{"Aceito troca, R$ 74.900", 7490000, true},
+		{"Vendo ou troco, R$ 74.900", 7490000, true},
+		{"Moto avaliada em R$ 74.900", 7490000, true},
+		{"Street Glide 2015 até 2016, R$ 74.900", 7490000, true},
+		{"Aceito troca ate R$ 60.000, moto R$ 74.900", 7490000, true},
+		{"Entrada de R$ 20.000, valor total 74 mil", 7400000, true},
+		{"Entrada 20 mil, moto 74 mil", 7400000, true},
+		{"Sinal de R$ 15.000, restante 74 mil", 7400000, true},
+		{"Entrada 20 mil, Street Glide R$ 74.900", 7490000, true},
+		{"R$ 74.900, troco por ate 90 mil", 7490000, true},
+		{"Aceito troca ate 90 mil, moto R$ 74.900", 7490000, true},
+		{"Moto 74 mil, troco por ate 90 mil", 7400000, true},
+		{"12 mil kms", 0, false},
+		{"42 mil kms rodados", 0, false},
+		{"12 mil quilometros", 0, false},
+		{"Vendo Road Glide, 42 mil kms rodados, aceito troca", 0, false},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -461,6 +518,74 @@ func TestParsePrice(t *testing.T) {
 Os casos com `km` são o coração deste teste. `ParsePrice` recebe tanto o campo estruturado de preço quanto, como alternativa, o texto livre inteiro do anúncio — que quase sempre menciona quilometragem. Um filtro que simplesmente recusasse qualquer texto contendo "km" quebraria o caso `"Vendo Street Glide 15/15, 42.000 km, R$ 74.900"`, e um filtro ausente transformaria `"12 mil km"` em R$ 12.000. A implementação resolve isso pela ordem de reconhecimento, não por exclusão.
 
 O caso `"negociável"` também é deliberado: é a palavra mais comum em anúncio de moto e não pode ser confundida com preço indisponível.
+
+`ParsePrice` reúne TODOS os candidatos num conjunto único e escolhe o maior
+plausível, em vez de percorrer ramos independentes e devolver no primeiro que
+sobreviver. Essa é a propriedade central: um decoy plausível não pode vencer só
+por aparecer antes.
+
+Ramos independentes com retorno antecipado falham em qualquer notação mista.
+`"Entrada de R$ 20.000, valor total 74 mil"` marca a entrada com `R$` e o preço
+real com "mil"; um ramo `R$` que retorne assim que acha algo devolve a entrada e
+nunca chega no preço. `"Entrada 20 mil, moto 74 mil"` é o espelho, sem nenhum
+`R$` no texto, e um ramo de milhares que pare no primeiro sobrevivente devolve
+20 mil. Ambos fabricam preço baixo, que passa sob o teto e vira alerta falso.
+
+Os dois coletores aplicam os MESMOS filtros, e a simetria importa. O teto de
+troca aparece nas duas notações — `"troco por até R$ 90.000"` e
+`"troco por até 90 mil"` — e o Instagram prefere a segunda. Guardar só o
+coletor de `R$` deixava o teto em milhares entrar no conjunto e, por ser o maior
+valor, vencer a comparação. Cada coletor descarta tanto o que vem depois de um
+`até` colado quanto, no caso dos milhares, o que é seguido de palavra
+não-monetária. O número puro só é considerado quando nada mais foi
+encontrado, porque só faz sentido quando a string inteira é o campo de preço.
+
+Valores precedidos IMEDIATAMENTE por `até` são descartados antes da comparação.
+`"Moto R$ 74.900, troco por até R$ 90.000"` cita um teto de avaliação da moto do
+comprador, não o preço da que está à venda — e R$ 90.000 não é implausível, é
+aceito como preço e depois reprova no matcher, fazendo uma moto dentro do alvo
+desaparecer.
+
+O discriminador é o marcador de teto colado ao número, não a vizinhança da
+palavra "troca". Procurar `troc`, `permut` ou `avali` numa janela larga destrói
+preço legítimo, porque essas palavras descrevem o anúncio e não o valor:
+`"Aceito troca, R$ 74.900"`, `"Vendo ou troco, R$ 74.900"` e
+`"Moto avaliada em R$ 74.900"` perderiam o preço inteiro. Pior, a janela larga
+também apagaria os dois valores de
+`"Aceito troca até R$ 60.000, moto R$ 74.900"`, trocando um preço errado por
+nenhum preço. `"Street Glide 2015 até 2016, R$ 74.900"` mostra que nem todo
+`até` governa o número seguinte — por isso a checagem exige o marcador colado.
+
+Entre vários valores marcados com `R$`, vence o MAIOR plausível. Anúncio de moto
+financiada cita entrada e parcela ao lado do preço — `"Entrada de R$ 20.000,
+moto R$ 74.900"` e `"Parcelas de R$ 1.800, valor total R$ 74.900"` — e a entrada
+é sempre menor que o valor da moto. Pegar a primeira ocorrência devolveria a
+entrada, um preço baixo e falso que passaria por Match. A regra falha só no
+formato promocional `"De R$ 82.000 por R$ 74.900"`, onde devolve o preço antigo;
+o dano ali é contido, porque o valor mais alto tende a estourar o teto e o
+anúncio cai em Talvez em vez de virar alerta falso.
+
+Os prefixos da lista precisam corresponder ao que o grupo `([a-z]*)` de fato
+captura, e ele para no acento. `"comentários"` é capturado como `coment`, então
+o prefixo listado tem de ser `coment` e não `comentari` — a forma mais longa
+nunca casaria. Pelo mesmo motivo `visualiza`, `avalia` e `quil` funcionam:
+todos param antes do acento da palavra real.
+
+O filtro de palavras não-monetárias vai além de quilometragem e cobre termos de
+engajamento — curtidas, seguidores, visualizações, likes. O caso que motiva isso
+é o mais perigoso do parser inteiro: `"20 mil seguidores no insta, vendo por
+74 mil"` devolvia R$ 20.000, um preço FABRICADO a partir da contagem de
+seguidores. Vinte mil reais passa no teste de plausibilidade e fica abaixo do
+teto, então o anúncio viraria Match e dispararia SMS por uma moto cujo preço
+real é outro. Como o Instagram é fonte-alvo e legenda de loja cita engajamento o
+tempo todo, o risco é corriqueiro, não hipotético.
+
+A varredura percorre TODAS as ocorrências de milhares em vez de olhar só a
+primeira. Anúncio real escreve `"42 mil km, valor 74 mil"`, com a quilometragem
+antes do preço; parar na primeira ocorrência descartaria o ramo inteiro e o
+preço se perderia.
+
+O guard de quilometragem reconhece prefixo, não token exato. Anúncio real escreve `"42 mil kms rodados"` e `"12 mil quilômetros"` tanto quanto `"12 mil km"`, e comparar com a string `"km"` deixaria os dois primeiros virarem preço. O prefixo `quil` cobre a forma acentuada porque o grupo `[a-z]*` do regex para no `ô`. Um anúncio sem preço cujo texto diz `"42 mil kms rodados"` viraria R$ 42.000 — dentro do teto, classificado como Match e disparando SMS por uma moto que sequer anunciou preço.
 
 `internal/normalize/year_test.go`:
 
@@ -573,25 +698,71 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	if m := thousandsSuffix.FindStringSubmatch(s); m != nil && !strings.EqualFold(m[2], "km") {
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*1000*100 + 0.5))
+	best := int64(0)
+	consider := func(cents int64) {
+		if value, ok := plausible(cents); ok && value > best {
+			best = value
 		}
 	}
 
-	if m := priceWithSymbol.FindStringSubmatch(s); m != nil {
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*100 + 0.5))
+	for _, loc := range priceWithSymbol.FindAllStringSubmatchIndex(s, -1) {
+		if precededByCeilingMarker(s, loc[0]) {
+			continue
+		}
+		if value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64); err == nil {
+			consider(int64(value*100 + 0.5))
 		}
 	}
 
-	if m := bareNumber.FindStringSubmatch(s); m != nil {
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*100 + 0.5))
+	for _, loc := range thousandsSuffix.FindAllStringSubmatchIndex(s, -1) {
+		if precededByCeilingMarker(s, loc[0]) || isNonPriceWord(s[loc[4]:loc[5]]) {
+			continue
+		}
+		if value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64); err == nil {
+			consider(int64(value*1000*100 + 0.5))
 		}
 	}
 
-	return 0, false
+	if best == 0 {
+		if m := bareNumber.FindStringSubmatch(s); m != nil {
+			if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
+				consider(int64(value*100 + 0.5))
+			}
+		}
+	}
+
+	return best, best > 0
+}
+
+var nonPricePrefixes = []string{
+	"km", "quil", "curtid", "seguidor", "visualiza", "like", "view",
+	"inscrit", "coment", "compartilh", "avalia",
+}
+
+func isNonPriceWord(s string) bool {
+	s = strings.ToLower(s)
+	for _, prefix := range nonPricePrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+var ceilingMarkers = []string{"ate", "até"}
+
+func precededByCeilingMarker(s string, at int) bool {
+	start := at - 8
+	if start < 0 {
+		start = 0
+	}
+	window := strings.TrimRight(strings.ToLower(s[start:at]), " ")
+	for _, marker := range ceilingMarkers {
+		if strings.HasSuffix(window, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func decimalize(s string) string {
@@ -772,6 +943,15 @@ func TestDetectBike(t *testing.T) {
 		{"Harley Davidson Touring 1690 2015", model.BikeTouringUnknown, model.VariantUnknown},
 		{"Honda Gold Wing 2015", model.BikeOther, model.VariantUnknown},
 		{"Harley Davidson Iron 883", model.BikeOther, model.VariantUnknown},
+		{"harley-davidson street-glide 2015", model.BikeStreetGlide, model.VariantBase},
+		{"Harley-Davidson Road-Glide Special 2015", model.BikeRoadGlide, model.VariantSpecial},
+		{"H-D Street Glide 2014", model.BikeStreetGlide, model.VariantBase},
+		{"Harley-Davidson Electra-Glide 2015", model.BikeElectraGlide, model.VariantUnknown},
+		{"Harley FLHX Street Glide 2015", model.BikeStreetGlide, model.VariantBase},
+		{"Harley FLTRX Road Glide 2015", model.BikeRoadGlide, model.VariantBase},
+		{"Harley FLTRX-SE 2015", model.BikeRoadGlide, model.VariantCVO},
+		{"Harley FLTRX SE 2015", model.BikeRoadGlide, model.VariantCVO},
+		{"Harley FLHXSE 2015", model.BikeStreetGlide, model.VariantCVO},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -821,6 +1001,8 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+var compactor = strings.NewReplacer(" ", "", "-", "", ".", "", "/", "")
+
 func Fold(s string) string {
 	decomposed := norm.NFD.String(strings.ToLower(s))
 	var b strings.Builder
@@ -835,7 +1017,7 @@ func Fold(s string) string {
 
 func DetectBike(text string) (string, string) {
 	t := Fold(text)
-	compact := strings.ReplaceAll(t, " ", "")
+	compact := compactor.Replace(t)
 
 	switch {
 	case containsAny(t, compact, "electra glide", "electraglide", "flht"):
@@ -844,7 +1026,7 @@ func DetectBike(text string) (string, string) {
 		return model.BikeRoadGlide, detectVariant(t, compact, "fltrxse", "fltrxs")
 	case containsAny(t, compact, "street glide", "streetglide", "stglide", "flhx"):
 		return model.BikeStreetGlide, detectVariant(t, compact, "flhxse", "flhxs")
-	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic", "flhtk"):
+	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic"):
 		return model.BikeUltra, model.VariantUnknown
 	case isHarley(t) && containsAny(t, compact, "touring", "1690", "1745", "rushmore"):
 		return model.BikeTouringUnknown, model.VariantUnknown
@@ -854,13 +1036,28 @@ func DetectBike(text string) (string, string) {
 }
 
 func detectVariant(t, compact, cvoCode, specialCode string) string {
-	if containsAny(t, compact, "cvo", cvoCode) {
+	if strings.Contains(t, "cvo") || containsCode(compact, cvoCode) {
 		return model.VariantCVO
 	}
-	if containsAny(t, compact, "special", "especial", specialCode) {
+	if containsAny(t, compact, "special", "especial") || containsCode(compact, specialCode) {
 		return model.VariantSpecial
 	}
 	return model.VariantBase
+}
+
+func containsCode(compact, code string) bool {
+	for from := 0; from <= len(compact)-len(code); {
+		offset := strings.Index(compact[from:], code)
+		if offset < 0 {
+			return false
+		}
+		end := from + offset + len(code)
+		if end >= len(compact) || compact[end] < 'a' || compact[end] > 'z' {
+			return true
+		}
+		from = from + offset + 1
+	}
+	return false
 }
 
 func isHarley(t string) bool {
@@ -877,7 +1074,20 @@ func containsAny(t, compact string, needles ...string) bool {
 }
 ```
 
+Os códigos de variante são procurados na forma compacta, mas exigindo que o
+código não seja seguido de letra. `"FLHX Street"` vira `"flhxstreet"`, que
+contém `flhxs` — o código da versão Special — e sem a checagem uma FLHX base
+seria gravada como Special. Procurar só no texto com espaços resolveria isso e
+abriria o buraco simétrico: `"FLTRX-SE"` e `"FLTRX SE"` deixariam de casar
+`fltrxse`, e este corpus hifeniza livremente em torno dos nomes. A fronteira é
+só à direita porque, na forma compacta, tudo vira uma palavra só e o caractere
+anterior é quase sempre uma letra do fabricante.
+
 A ordem do `switch` é a regra de correção: Electra Glide é testada antes de Road e Street porque o texto pode conter mais de um termo, e a variante mais específica precisa ganhar. O código `flhxse` é testado antes de `flhxs` pelo mesmo motivo.
+
+O `compactor` remove pontuação além de espaços porque anúncio brasileiro escreve `"Harley-Davidson Street-Glide"` tanto quanto a forma com espaços. Removendo só espaços, `"street-glide"` não casa nem `"street glide"` nem `"streetglide"`, e uma Street Glide dentro do alvo é classificada como `other` e descartada em silêncio. A correção fica no `compactor`, não em `Fold`, justamente para não alterar a normalização de nomes de cidade que a Task 5 faz com `Fold`.
+
+O código `flhtk` não aparece no ramo Ultra porque `flht`, no ramo Electra Glide, já o captura — e a classificação resultante está correta, já que a FLHTK é uma Electra Glide Ultra Limited. Incluí-lo ali seria código inalcançável.
 
 - [ ] **Step 5: Rodar os testes e confirmar que passam**
 
@@ -924,6 +1134,36 @@ func TestParseLocation(t *testing.T) {
 		{"São José dos Pinhais - PR", "sao jose dos pinhais", "PR"},
 		{"Niterói", "niteroi", ""},
 		{"", "", ""},
+		{"Rio de Janeiro - RJ - Brasil", "rio de janeiro", "RJ"},
+		{"Guarulhos - SP (Cumbica)", "guarulhos", "SP"},
+		{"São Paulo (SP)", "sao paulo", "SP"},
+		{"Curitiba - Paraná", "curitiba", "PR"},
+		{"Copacabana, Rio de Janeiro - RJ", "rio de janeiro", "RJ"},
+		{"Embu-Guaçu - SP", "embu guacu", "SP"},
+		{"Embu Guaçu - SP", "embu guacu", "SP"},
+		{"Lapa, São Paulo - SP", "sao paulo", "SP"},
+		{"Curitiba- PR", "curitiba", "PR"},
+		{"Curitiba-PR", "curitiba", "PR"},
+		{"Niterói-RJ", "niteroi", "RJ"},
+		{"Mogi das Cruzes-SP", "mogi das cruzes", "SP"},
+		{"Curitiba PR", "curitiba", "PR"},
+		{"Sao Jose dos Pinhais PR", "sao jose dos pinhais", "PR"},
+		{"Campinas - São Paulo", "campinas", "SP"},
+		{"Volta Redonda - Rio de Janeiro", "volta redonda", "RJ"},
+		{"Cabo Frio, Rio de Janeiro", "cabo frio", "RJ"},
+		{"Rio de Janeiro", "rio de janeiro", "RJ"},
+		{"São Paulo", "sao paulo", "SP"},
+		{"Rio de Janeiro, Copacabana", "rio de janeiro", ""},
+		{"São Paulo, Moema", "sao paulo", ""},
+		{"Vila Mariana, São Paulo", "vila mariana", "SP"},
+		{"São Paulo Zona Sul", "sao paulo", "SP"},
+		{"Rio de Janeiro Zona Oeste", "rio de janeiro", "RJ"},
+		{"Curitiba Centro", "curitiba", "PR"},
+		{"Campinas - São Paulo - Brasil", "campinas", "SP"},
+		{"Volta Redonda - Rio de Janeiro - Brasil", "volta redonda", "RJ"},
+		{"Santos, São Paulo (Zona Leste)", "santos", "SP"},
+		{"Vila Isabel, Volta Redonda - RJ", "volta redonda", "RJ"},
+		{"Centro, Campinas - SP", "campinas", "SP"},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -950,6 +1190,10 @@ func TestLocationTier(t *testing.T) {
 		{"belo horizonte", "MG", "outside"},
 		{"", "", "outside"},
 		{"niteroi", "", "metro"},
+		{"embu guacu", "SP", "metro"},
+		{"lapa", "SP", "state"},
+		{"campinas", "SP", "state"},
+		{"volta redonda", "RJ", "state"},
 	}
 	for _, c := range cases {
 		t.Run(c.city+"/"+c.state, func(t *testing.T) {
@@ -1025,7 +1269,7 @@ var metroCities = map[string]string{
 	"francisco morato":       "SP",
 	"mairipora":              "SP",
 	"itapecerica da serra":   "SP",
-	"embu-guacu":             "SP",
+	"embu guacu":            "SP",
 	"curitiba":               "PR",
 	"sao jose dos pinhais":   "PR",
 	"pinhais":                "PR",
@@ -1047,6 +1291,18 @@ var metroCities = map[string]string{
 }
 
 var targetStates = map[string]bool{"RJ": true, "SP": true, "PR": true}
+
+var stateNames = map[string]string{
+	"acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM",
+	"bahia": "BA", "ceara": "CE", "distrito federal": "DF",
+	"espirito santo": "ES", "goias": "GO", "maranhao": "MA",
+	"mato grosso": "MT", "mato grosso do sul": "MS", "minas gerais": "MG",
+	"para": "PA", "paraiba": "PB", "parana": "PR", "pernambuco": "PE",
+	"piaui": "PI", "rio de janeiro": "RJ", "rio grande do norte": "RN",
+	"rio grande do sul": "RS", "rondonia": "RO", "roraima": "RR",
+	"santa catarina": "SC", "sao paulo": "SP", "sergipe": "SE",
+	"tocantins": "TO",
+}
 ```
 
 - [ ] **Step 4: Implementar a análise de local**
@@ -1061,28 +1317,105 @@ import (
 	"strings"
 )
 
-var stateSuffix = regexp.MustCompile(`(?i)[\s,/\-]+([A-Z]{2})\s*$`)
+var (
+	segmentSplit  = regexp.MustCompile(`[,/()]+|\s+-\s*|\s*-\s+`)
+	trailingState = regexp.MustCompile(`(?i)[\s\-]([a-z]{2})\s*$`)
+)
 
 func ParseLocation(s string) (string, string) {
-	s = strings.TrimSpace(s)
-	if s == "" {
+	if strings.TrimSpace(s) == "" {
 		return "", ""
 	}
-	state := ""
-	if m := stateSuffix.FindStringSubmatch(s); m != nil {
-		candidate := strings.ToUpper(m[1])
-		if isBrazilianState(candidate) {
-			state = candidate
-			s = s[:len(s)-len(m[0])]
+
+	folded := Fold(s)
+	if m := trailingState.FindStringSubmatch(folded); m != nil && isBrazilianState(strings.ToUpper(m[1])) {
+		folded = folded[:len(folded)-len(m[0])] + ", " + m[1]
+	}
+
+	segments := splitSegments(folded)
+	if len(segments) == 0 {
+		return "", ""
+	}
+
+	state, stateIndex := findState(segments)
+
+	fallback := ""
+	for i, seg := range segments {
+		if i == stateIndex {
+			continue
+		}
+		metroState, ok := metroCities[cityKey(seg)]
+		if !ok {
+			continue
+		}
+		if state != "" && metroState == state {
+			return cityKey(seg), state
+		}
+		if fallback == "" {
+			fallback = cityKey(seg)
 		}
 	}
-	city := Fold(strings.Trim(s, " ,-/"))
-	return city, state
+	if fallback != "" {
+		return fallback, state
+	}
+
+	for i, seg := range segments {
+		if i == stateIndex {
+			continue
+		}
+		if city, embedded := locationFromText(seg); city != "" {
+			if state == "" {
+				state = embedded
+			}
+			return city, state
+		}
+	}
+
+	start := len(segments) - 1
+	if stateIndex >= 0 {
+		start = stateIndex - 1
+	}
+	if start >= 0 {
+		return segments[start], state
+	}
+	if stateIndex >= 0 {
+		return cityKey(segments[stateIndex]), state
+	}
+	return "", state
+}
+
+func splitSegments(folded string) []string {
+	var out []string
+	for _, seg := range segmentSplit.Split(folded, -1) {
+		if seg = strings.Trim(seg, " -"); seg != "" {
+			out = append(out, seg)
+		}
+	}
+	return out
+}
+
+func findState(segments []string) (string, int) {
+	for i := len(segments) - 1; i >= 0; i-- {
+		seg := segments[i]
+		if len(seg) == 2 && isBrazilianState(strings.ToUpper(seg)) {
+			return strings.ToUpper(seg), i
+		}
+		if i > 0 || len(segments) == 1 {
+			if uf, ok := stateNames[seg]; ok {
+				return uf, i
+			}
+		}
+	}
+	return "", -1
+}
+
+func cityKey(s string) string {
+	return strings.ReplaceAll(s, "-", " ")
 }
 
 func LocationTier(city, state string) string {
 	if city != "" {
-		if metroState, ok := metroCities[city]; ok {
+		if metroState, ok := metroCities[cityKey(city)]; ok {
 			if state == "" || state == metroState {
 				return "metro"
 			}
@@ -1104,6 +1437,73 @@ func isBrazilianState(s string) bool {
 	return false
 }
 ```
+
+O local vem em formatos muito mais variados que `Cidade - UF`. `ParseLocation`
+quebra a string em segmentos por vírgula, barra, parênteses e hífen cercado de
+espaço, procura o estado de trás para frente (sigla de duas letras ou nome por
+extenso) e então procura a cidade testando cada segmento contra a tabela.
+
+Cada regra existe por um formato real que a versão presa ao sufixo rejeitava por
+completo: `"Rio de Janeiro - RJ - Brasil"` e `"Guarulhos - SP (Cumbica)"` têm
+texto depois da UF; `"São Paulo (SP)"` põe a UF entre parênteses;
+`"Curitiba - Paraná"` escreve o estado por extenso, que é o formato do Mercado
+Livre. Todos viravam `outside`, ou seja, anúncio dentro do alvo descartado.
+`"Copacabana, Rio de Janeiro - RJ"` prefixa o bairro e rebaixava um Match a
+Talvez.
+
+Quando mais de um segmento bate a tabela — `"Lapa, São Paulo - SP"`, em que Lapa
+é município do Paraná e bairro de São Paulo — vence o segmento cuja UF na tabela
+coincide com o estado detectado. Sem esse desempate a cidade sairia como `lapa`
+com estado `SP`, combinação que não é metro e rebaixaria o anúncio.
+
+Duas armadilhas desta função foram descobertas testando-a contra formatos reais
+e cada uma tem um teste dedicado.
+
+A primeira: o segmento que forneceu o estado precisa ser excluído da busca por
+cidade. `"Campinas - São Paulo"` tem `sao paulo` como estado por extenso, e essa
+mesma string existe na tabela de cidades — sem a exclusão ela vence o desempate,
+a cidade sai como `sao paulo` e uma moto em Campinas é classificada como Match
+metropolitano. O `stateIndex` existe só para isso. Quando o estado é o único
+segmento, como em `"Rio de Janeiro"` sem UF, o fallback final o reaproveita como
+cidade, que é o comportamento correto para a capital.
+
+A terceira: um nome de estado por extenso só conta como estado quando NÃO é o
+primeiro segmento, ou quando é o único. `"Rio de Janeiro"` e `"São Paulo"` são
+simultaneamente cidade e estado, e o que os desambigua é a posição: em
+`"Rio de Janeiro, Copacabana"` a capital vem primeiro e é cidade; em
+`"Cabo Frio, Rio de Janeiro"` vem depois e é estado. Siglas de duas letras
+continuam aceitas em qualquer posição.
+
+Quando nenhum segmento consta da tabela de cidades, o fallback devolve o
+segmento IMEDIATAMENTE ANTERIOR ao estado — `stateIndex - 1` — e não o primeiro
+nem o último. Anúncio real põe a cidade colada ao estado; o que vem antes dela é
+bairro e o que vem depois é ruído. `"Vila Isabel, Volta Redonda - RJ"` deve
+devolver `volta redonda`, não `vila isabel`. O tier não muda nesse caso, já que
+nenhuma das duas está na tabela metropolitana, mas a cidade é gravada no banco e
+exibida no dashboard, então o dado errado apareceria para quem revisa.
+
+O limite superior da varredura é o que importa e é fácil errar: varrer de trás
+para frente sem parar no estado devolve o ruído do fim, quebrando
+`"Campinas - São Paulo - Brasil"` (viria `brasil`) e
+`"Santos, São Paulo (Zona Leste)"` (viria `zona leste`) — casos que esta mesma
+tabela de testes exige. Quando nenhum estado é encontrado, a varredura começa no
+último segmento, porque aí não há sufixo a evitar.
+
+O gate é por posição inicial e não por posição final porque o sufixo depois do
+estado é comum: `"Campinas - São Paulo - Brasil"` e
+`"Santos, São Paulo (Zona Leste)"` têm o estado no meio. Exigir que fosse o
+último segmento faria o estado passar despercebido, o segmento órfão `sao paulo`
+casaria a tabela de cidades com estado vazio, e uma moto em Campinas viraria
+Match na capital. A cláusula `len(segments) == 1` preserva a capital sozinha.
+
+A segunda: a UF colada por hífen ou espaço simples, `"Curitiba-PR"` e
+`"Curitiba PR"`, não é separada pela segmentação, porque o hífen só separa com
+espaço ao lado. Por isso `trailingState` extrai a sigla final antes de segmentar.
+`"Embu-Guaçu"` não é afetada porque seu último token tem cinco letras.
+
+O hífen só separa quando tem espaço de pelo menos um lado, para que
+`"Embu-Guaçu"` não se parta em dois. `cityKey` normaliza hífen para espaço na
+comparação, de modo que as duas grafias encontram a mesma entrada.
 
 - [ ] **Step 5: Rodar os testes e confirmar que passam**
 
@@ -1207,6 +1607,108 @@ func TestNormalizeLeavesMissingFieldsNil(t *testing.T) {
 	}
 }
 
+func TestNormalizeResolvesCityDeterministically(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "det1",
+		RawText:    "Street Glide 2015 em Sao Jose dos Pinhais, aceito troca",
+	}
+	first := Normalize(raw)
+	for i := 0; i < 50; i++ {
+		if got := Normalize(raw); got.City != first.City || got.Fingerprint != first.Fingerprint {
+			t.Fatalf("run %d gave %q/%s, first gave %q/%s", i, got.City, got.Fingerprint, first.City, first.Fingerprint)
+		}
+	}
+	if first.City != "sao jose dos pinhais" {
+		t.Errorf("City = %q, want sao jose dos pinhais", first.City)
+	}
+}
+
+func TestNormalizeCityMatchesWholeWordsOnly(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "word1",
+		RawText:    "Street Glide 2015, mais imagens no WhatsApp, Rio de Janeiro RJ",
+	}
+	if l := Normalize(raw); l.City != "rio de janeiro" {
+		t.Errorf("City = %q, want rio de janeiro", l.City)
+	}
+}
+
+func TestNormalizePrefersLongestCityMatch(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "long1",
+		RawText:    "Street Glide 2015, moto na Lapa, Sao Paulo capital",
+	}
+	l := Normalize(raw)
+	if l.City != "sao paulo" || l.State != "SP" {
+		t.Errorf("location = %q/%q, want sao paulo/SP", l.City, l.State)
+	}
+}
+
+func TestNormalizeIgnoresFiscalYears(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "fiscal1",
+		RawText:    "IPVA 2026 pago. Vendo Road Glide 2015, Curitiba - PR",
+	}
+	l := Normalize(raw)
+	if l.Year == nil || *l.Year != 2015 {
+		t.Errorf("Year = %v, want 2015", l.Year)
+	}
+}
+
+func TestNormalizeReadsPriceAfterMileage(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "price1",
+		RawText:    "Street Glide 2015, 42 mil km, valor 74 mil, Curitiba - PR",
+	}
+	l := Normalize(raw)
+	if l.PriceCents == nil || *l.PriceCents != 7400000 {
+		t.Errorf("PriceCents = %v, want 7400000", l.PriceCents)
+	}
+}
+
+func TestNormalizeFindsCityWrittenWithAttachedState(t *testing.T) {
+	cases := []struct {
+		text string
+		city string
+	}{
+		{"Street Glide 2015, moto em Curitiba-PR, aceito troca", "curitiba"},
+		{"Road Glide 2015 (Guarulhos-SP) impecavel", "guarulhos"},
+		{"Street Glide 2014, Embu-Guacu SP", "embu guacu"},
+	}
+	for _, c := range cases {
+		t.Run(c.city, func(t *testing.T) {
+			l := Normalize(model.RawListing{Source: "instagram", ExternalID: c.city, RawText: c.text})
+			if l.City != c.city {
+				t.Errorf("City = %q, want %q", l.City, c.city)
+			}
+		})
+	}
+}
+
+func TestNormalizeIgnoresMoreFiscalYearShapes(t *testing.T) {
+	cases := []string{
+		"IPVA/2026 pago. Street Glide 2015, Curitiba - PR",
+		"Documento 2026 ok. Road Glide 2015, Curitiba - PR",
+		"Emplacada 2026. Street Glide 2015, Curitiba - PR",
+		"Documentação 2026 em dia. Street Glide 2015, Curitiba - PR",
+		"Documentos 2026 ok. Road Glide 2015, Curitiba - PR",
+		"IPVA 2026 PAGO. VENDO STREET GLIDE 2015, CURITIBA-PR",
+	}
+	for _, text := range cases {
+		t.Run(string([]rune(text)[:12]), func(t *testing.T) {
+			l := Normalize(model.RawListing{Source: "instagram", ExternalID: text[:8], RawText: text})
+			if l.Year == nil || *l.Year != 2015 {
+				t.Errorf("Year = %v, want 2015", l.Year)
+			}
+		})
+	}
+}
+
 func TestFingerprintIsStableAndDiscriminating(t *testing.T) {
 	year := 2015
 	km := 31200
@@ -1245,12 +1747,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
 )
 
 const mileageBucketSize = 5000
+
+var fiscalYear = regexp.MustCompile(`\b(ipva|licenciad\w*|licenciamento|crlv|seguro|financiamento|document\w*|emplacad\w*)\s*(?:/|de)?\s*(19|20)\d{2}`)
 
 func Normalize(raw model.RawListing) model.Listing {
 	full := strings.TrimSpace(raw.Title + " " + raw.RawText)
@@ -1274,7 +1779,7 @@ func Normalize(raw model.RawListing) model.Listing {
 
 	if year, ok := ParseYear(raw.YearText); ok {
 		l.Year = &year
-	} else if year, ok := ParseYear(full); ok {
+	} else if year, ok := ParseYear(fiscalYear.ReplaceAllString(Fold(full), " ")); ok {
 		l.Year = &year
 	}
 
@@ -1294,13 +1799,42 @@ func Normalize(raw model.RawListing) model.Listing {
 }
 
 func locationFromText(text string) (string, string) {
-	folded := Fold(text)
+	folded := cityKey(Fold(text))
+	bestCity, bestState, bestIndex := "", "", 0
 	for city, state := range metroCities {
-		if strings.Contains(folded, city) {
-			return city, state
+		index := wordIndex(folded, city)
+		if index < 0 {
+			continue
+		}
+		if bestCity == "" || len(city) > len(bestCity) ||
+			(len(city) == len(bestCity) && index < bestIndex) {
+			bestCity, bestState, bestIndex = city, state, index
 		}
 	}
-	return "", ""
+	return bestCity, bestState
+}
+
+func wordIndex(text, term string) int {
+	for from := 0; from <= len(text)-len(term); {
+		offset := strings.Index(text[from:], term)
+		if offset < 0 {
+			return -1
+		}
+		start := from + offset
+		if !wordChar(text, start-1) && !wordChar(text, start+len(term)) {
+			return start
+		}
+		from = start + 1
+	}
+	return -1
+}
+
+func wordChar(text string, i int) bool {
+	if i < 0 || i >= len(text) {
+		return false
+	}
+	c := text[i]
+	return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
 }
 
 func Fingerprint(l model.Listing) string {
@@ -1317,6 +1851,47 @@ func Fingerprint(l model.Listing) string {
 	return hex.EncodeToString(sum[:8])
 }
 ```
+
+`locationFromText` percorre um mapa, e a ordem de iteração de mapa em Go é
+aleatória por construção. Retornar a primeira cidade encontrada tornaria a
+função não determinística, e como a cidade entra no `Fingerprint`, a impressão
+digital mudaria entre execuções — destruindo exatamente a detecção de reanúncio
+que ela existe para fazer. A tabela colide consigo mesma (`pinhais` é sufixo de
+`sao jose dos pinhais`), então a colisão não é hipotética. O critério de escolha
+é determinístico: vence o nome mais longo e, em empate de tamanho, o de menor
+posição no texto.
+
+O texto passa por `cityKey` antes da busca, convertendo hífen em espaço. Isso
+resolve dois casos de uma vez: `"Curitiba-PR"` escrito no corpo do anúncio passa
+a encontrar `curitiba`, e `"Embu-Guaçu"` encontra a entrada da tabela, que é
+grafada com espaço desde a Task 5. Sem essa normalização o caminho de texto
+livre rejeitaria exatamente a forma que o caminho estruturado aceita.
+
+O mesmo mecanismo serve de última tentativa em `ParseLocation`: quando nenhum
+segmento bate exatamente a tabela, procura-se uma cidade DENTRO do segmento.
+`"São Paulo Zona Sul"` é como o Mercado Livre nomeia a localização, e sem essa
+busca o texto inteiro vira uma "cidade" inexistente na tabela e devolve
+`outside` — a capital paulista, uma das três regiões-alvo, rejeitada por
+completo nessa fonte.
+
+A busca é por palavra inteira, não por substring. `mage` aparece dentro de
+`imagens`, e "mais imagens no WhatsApp" é frase corriqueira em anúncio — sem o
+limite de palavra, o anúncio seria gravado como se estivesse em Magé. O critério
+de nome mais longo resolve o outro caso: em "moto na Lapa, São Paulo capital",
+`sao paulo` vence `lapa`, evitando que uma moto paulista seja gravada no Paraná.
+
+O texto é normalizado com `Fold` antes de remover os anos fiscais, e o padrão
+usa `document\w*`. As duas coisas dependem uma da outra: o padrão não tem
+`(?i)` justamente porque `Fold` já baixou a caixa, e `IPVA` e `CRLV` aparecem
+quase sempre em maiúsculas no anúncio. Trocar `Fold(full)` de volta por `full`
+faria toda palavra-chave maiúscula deixar de casar — por isso a tabela tem um
+caso inteiramente em caixa alta, que falha se alguém desfizer a dependência. Sem o `Fold`, `"Documentação 2026"` escaparia: `\w` em Go é
+ASCII e para no `ç`, então nenhuma variação do padrão alcança a palavra
+acentuada como ela aparece no anúncio. O `\w*` cobre o plural `"Documentos"`.
+
+Anos fiscais são removidos antes de procurar o ano no texto livre. `"IPVA 2026
+pago. Vendo Road Glide 2015"` devolveria 2026, que o matcher rejeita de imediato
+— um anúncio dentro do alvo perdido por causa do ano do licenciamento.
 
 O `Fingerprint` agrupa quilometragem em faixas de 5.000 km porque o mesmo vendedor reanuncia com número redondo diferente ("31.200" vira "31 mil"), e exigir igualdade exata perderia todo reanúncio.
 
@@ -1683,6 +2258,25 @@ func TestPendingNotificationsOnlyReturnsUnnotifiedMatches(t *testing.T) {
 	}
 }
 
+func TestSetUserState(t *testing.T) {
+	s := openTemp(t)
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	if err := s.SetUserState(res.ID, "contacted"); err != nil {
+		t.Fatalf("SetUserState: %v", err)
+	}
+	row, _, err := s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.UserState != "contacted" {
+		t.Errorf("UserState = %q, want contacted", row.UserState)
+	}
+}
+
 func TestRecentRunCounts(t *testing.T) {
 	s := openTemp(t)
 	now := time.Now()
@@ -1807,14 +2401,13 @@ CREATE INDEX IF NOT EXISTS idx_source_runs_source ON source_runs (source, starte
 `
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return nil, fmt.Errorf("enabling foreign keys: %w", err)
-	}
 	if _, err := db.Exec(schema); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
 	return &Store{db: db}, nil
@@ -2052,6 +2645,90 @@ Expected: PASS nos quatro testes.
 
 Se o scan de `first_seen_at` ou `last_seen_at` falhar com erro de conversão, o driver devolveu texto em vez de `time.Time`. Nesse caso abra a conexão com `sql.Open("sqlite", path+"?_time_format=sqlite")` e rode os testes de novo. Verifique antes de seguir: o histórico de preço depende dessas colunas.
 
+O scan não falha: o `modernc.org/sqlite` grava `time.Time` como texto e lê de
+volta o mesmo instante, com fuso preservado. O que quebra é a **ordenação**. O
+texto gravado é `2026-08-09 18:00:00 -0300 BRT`, hora local seguida do offset,
+e todo `ORDER BY` nessas colunas compara esse texto letra a letra. Duas
+gravações do mesmo instante feitas em fusos diferentes ordenam pela hora de
+parede, não pela linha do tempo — uma coleta às 21:00 UTC gravada como
+`18:00:00 -0300` fica *antes* de outra às 20:00 UTC gravada como
+`20:00:00 +0000`.
+
+Não é hipotético: basta o processo rodar local (`-0300`) e depois em container
+(`TZ=UTC`), ou vice-versa. O histórico de preço é o que mais sofre, porque é
+exatamente a coluna que o painel lê em ordem. Com três observações — 7.500.000,
+7.300.000 e 7.100.000 — gravadas com o fuso mudando no meio, `GetRow` devolvia
+`[7300000 7500000 7100000]` e `FirstPriceCents` virava 7.300.000. A queda que o
+painel anunciaria seria de R$ 2.000, não os R$ 4.000 reais: o sinal de
+negociação sai menor do que é, que é a única direção de erro que importa aqui.
+
+Trocar para `?_time_format=sqlite` **não resolve** — muda a pontuação
+(`2026-08-09 18:00:00-03:00`) e mantém o offset, então a ordenação continua
+lexicográfica sobre hora de parede. A correção é normalizar para UTC na
+escrita: `now.UTC()` no `Upsert`, `started.UTC()`/`finished.UTC()` no
+`RecordRun`. Todo texto gravado passa a terminar em `+00:00` e a ordem lexical
+volta a ser a ordem cronológica.
+
+Todo `ORDER BY` sobre timestamp no pacote ganha `id` como desempate, na mesma
+direção da ordenação primária — as cinco consultas, não só as de
+`price_history`. Empate é o caso normal, não a exceção: uma coleta passa o mesmo
+`now` para todos os `Upsert` da rodada, então os anúncios daquele lote nascem com
+`first_seen_at` idêntico por construção.
+
+Sem o desempate, as consultas descendentes devolvem o empate ao contrário.
+Medido com cinco anúncios do mesmo lote, `ListByVerdict` (`DESC`) devolvia
+`[1 2 3 4 5]` em vez de `[5 4 3 2 1]`, e `RecentRunCounts` com `started_at`
+igual devolvia `[10 20 30 40]` — o inverso de "mais recente primeiro", que é o
+contrato da função. Não se perde dado: um anúncio empurrado para fora de uma
+página de `PendingNotifications` continua com `notified = 0` e entra na rodada
+seguinte. O que se perde é a ordem, justamente onde ela tinha acabado de ser
+consertada.
+
+`PRAGMA foreign_keys = ON` via `db.Exec` também não vale: pragma é por conexão,
+e o `database/sql` mantém um pool. O comando pega a conexão que estiver livre
+naquele instante e as outras nascem com a checagem desligada — em oito conexões
+simultâneas, sete ficaram com `foreign_keys = 0`. O `ON DELETE CASCADE` do
+`price_history` fica valendo só às vezes, o que é pior que não valer nunca. A
+pragma vai no DSN (`path+"?_pragma=foreign_keys(1)"`), onde o driver a aplica a
+cada conexão que abrir.
+
+O mesmo DSN liga `journal_mode(WAL)` e `busy_timeout(5000)`. A coleta agendada e
+o dashboard são processos distintos sobre o mesmo arquivo: sem WAL, uma escrita
+bloqueia toda leitura, e sem `busy_timeout` a escrita concorrente recebe
+`SQLITE_BUSY` de imediato em vez de esperar sua vez.
+
+`_txlock=immediate` completa o par, e sem ele metade do ganho não existe.
+`Upsert` abre a transação, faz o `SELECT` que decide entre inserir e atualizar,
+e só então escreve. Uma transação que começa lendo segura um snapshot de
+leitura, e a promoção de leitura para escrita é justamente o caso em que o
+SQLite ignora o `busy_timeout` de propósito — esperar ali poderia travar os dois
+lados. Medido: a escrita concorrente recebeu `SQLITE_BUSY` em 0s com 5000ms
+configurados, e é exatamente a escrita que a coleta executa por anúncio. Com
+`immediate`, o `BEGIN` toma o lock de escrita antes de qualquer leitura e o
+handler volta a valer. Só o `Upsert` abre transação; as leituras seguem em
+paralelo sob WAL.
+
+O WAL cumpre o que promete — com uma transação de escrita aberta, a leitura do
+outro processo retorna na hora. O `busy_timeout` sozinho **não**: ele não vale
+para o `Upsert`, que é justamente a escrita que importa. O `Upsert` abre a
+transação, faz o `SELECT` que procura o anúncio e só então grava. Uma transação
+que começa lendo pega um snapshot de leitura, e subir de leitura para escrita
+com outro escritor no caminho é a única situação em que o SQLite **não** chama o
+busy handler: esperar ali poderia travar os dois lados, então ele devolve
+`SQLITE_BUSY` na hora. Medido: o escritor concorrente falhava em 0s, com os
+5000ms configurados sem efeito nenhum.
+
+Por isso o DSN também leva `_txlock=immediate`, que faz o `BEGIN` já tomar o
+lock de escrita, antes de qualquer leitura. Aí não há upgrade, o busy handler
+entra e o escritor espera. Com a correção, o mesmo teste espera e conclui sem
+erro quando o lock é liberado.
+
+O alcance é pequeno de propósito: `db.Begin()` aparece num único lugar no
+pacote, o `Upsert`. As consultas de leitura usam `db.Query`/`db.QueryRow` direto,
+sem transação, então continuam entrando em paralelo pelo WAL. `busy_timeout`
+segue necessário para as escritas avulsas — `MarkNotified`, `SetUserState`,
+`RecordRun` — que são `db.Exec` sem transação e onde o busy handler já valia.
+
 - [ ] **Step 7: Commit**
 
 ```bash
@@ -2071,7 +2748,9 @@ git commit -m "feat: sqlite persistence with deduplication and price history"
 - Consumes: `model.RawListing` da Task 2
 - Produces:
   - `source.Source` interface com `Name() string` e `Fetch(ctx context.Context) ([]model.RawListing, error)`
-  - `source.NewOLX(client *http.Client, baseURLs []string) *source.OLX`
+  - `source.defaultUserAgent`, a string de User-Agent que todas as fontes HTTP usam
+  - `source.NewOLX(fetcher source.PageFetcher, baseURLs []string) *source.OLX`
+  - `source.PageFetcher` e `source.NewBrowserFetcher(devtoolsURL string) *source.BrowserFetcher`
   - `source.ParseOLX(body io.Reader) ([]model.RawListing, error)` — exportada para permitir teste sem rede
 
 - [ ] **Step 1: Capturar a fixture real**
@@ -2081,7 +2760,7 @@ A OLX serve os resultados dentro de um bloco `<script id="__NEXT_DATA__" type="a
 ```bash
 mkdir -p internal/source/testdata
 curl -sL -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' \
-  'https://www.olx.com.br/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide' \
+  'https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide' \
   -o internal/source/testdata/olx-search.html
 grep -c '__NEXT_DATA__' internal/source/testdata/olx-search.html
 ```
@@ -2156,6 +2835,22 @@ func stringReader(s string) io.Reader {
 
 O segundo teste é o que impede a falha silenciosa: página de bloqueio precisa virar erro visível, não lista vazia.
 
+A mesma exigência vale no nível do campo, e não só no do contêiner. Se os cards
+aparecem mas nenhum produz um anúncio — porque o seletor de título ou o padrão
+de identificador deixou de casar — o resultado é uma lista vazia sem erro,
+indistinguível de uma busca que legitimamente não achou nada. Como cinco dos
+sete seletores já mudaram uma vez, esse é o modo de falha esperado no próximo
+deploy da fonte. Card individual malformado continua sendo pulado em silêncio;
+o que vira erro é a rodada inteira encontrar cards e não extrair nenhum.
+
+A escolha do array de anúncios dentro do payload precisa ser por contexto, não
+pela primeira ocorrência que decodificar. A página traz mais de uma lista com a
+mesma chave — a de resultados e a da seleção VIP do topo — e hoje a de
+resultados vem primeiro apenas por acidente de ordem. Se a OLX passar a popular
+a seleção VIP numa busca legitimamente vazia, os itens dela seriam devolvidos
+como se fossem o resultado, que é a falha silenciosa desta task ao contrário:
+em vez de lista vazia onde havia anúncios, anúncios onde a busca não achou nada.
+
 - [ ] **Step 3: Rodar o teste e confirmar a falha**
 
 Run: `go test ./internal/source/ -v`
@@ -2170,13 +2865,58 @@ package source
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
+	"github.com/chromedp/chromedp"
 )
+
+const (
+	defaultDevtoolsURL = "http://127.0.0.1:9222"
+	browserSettleDelay = 3 * time.Second
+)
+
+const defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
 
 type Source interface {
 	Name() string
 	Fetch(ctx context.Context) ([]model.RawListing, error)
+}
+
+type PageFetcher interface {
+	FetchPage(ctx context.Context, url string) (string, error)
+}
+
+type BrowserFetcher struct {
+	devtoolsURL string
+	settle      time.Duration
+}
+
+func NewBrowserFetcher(devtoolsURL string) *BrowserFetcher {
+	if devtoolsURL == "" {
+		devtoolsURL = defaultDevtoolsURL
+	}
+	return &BrowserFetcher{devtoolsURL: devtoolsURL, settle: browserSettleDelay}
+}
+
+func (b *BrowserFetcher) FetchPage(ctx context.Context, url string) (string, error) {
+	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, b.devtoolsURL)
+	defer cancelAlloc()
+
+	tabCtx, cancelTab := chromedp.NewContext(allocCtx)
+	defer cancelTab()
+
+	var html string
+	err := chromedp.Run(tabCtx,
+		chromedp.Navigate(url),
+		chromedp.Sleep(b.settle),
+		chromedp.OuterHTML("html", &html),
+	)
+	if err != nil {
+		return "", fmt.Errorf("fetching %s through the browser: %w", url, err)
+	}
+	return html, nil
 }
 ```
 
@@ -2204,8 +2944,6 @@ import (
 	"github.com/andreabreu76/harley-hunter/internal/model"
 )
 
-const olxUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-
 type OLX struct {
 	client   *http.Client
 	baseURLs []string
@@ -2227,7 +2965,7 @@ func (o *OLX) Fetch(ctx context.Context) ([]model.RawListing, error) {
 		if err != nil {
 			return nil, fmt.Errorf("building request for %s: %w", url, err)
 		}
-		req.Header.Set("User-Agent", olxUserAgent)
+		req.Header.Set("User-Agent", defaultUserAgent)
 		req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
 
 		resp, err := o.client.Do(req)
@@ -2372,7 +3110,7 @@ git commit -m "feat: olx source with fixture-based parser tests"
 - Test: `internal/source/mercadolivre_test.go`, `internal/source/testdata/mercadolivre-search.html`
 
 **Interfaces:**
-- Consumes: `source.Source` da Task 9
+- Consumes: `source.Source` e `source.defaultUserAgent` da Task 9
 - Produces: `source.NewMercadoLivre(client *http.Client, baseURLs []string) *source.MercadoLivre` e `source.ParseMercadoLivre(body io.Reader) ([]model.RawListing, error)`
 
 - [ ] **Step 1: Capturar a fixture real**
@@ -2476,7 +3214,7 @@ func (m *MercadoLivre) Fetch(ctx context.Context) ([]model.RawListing, error) {
 		if err != nil {
 			return nil, fmt.Errorf("building request for %s: %w", url, err)
 		}
-		req.Header.Set("User-Agent", olxUserAgent)
+		req.Header.Set("User-Agent", defaultUserAgent)
 		req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
 
 		resp, err := m.client.Do(req)
@@ -2870,6 +3608,14 @@ func HealthStatus(counts []int) string {
 }
 ```
 
+O dashboard pede um histórico bem maior que a janela de vazio. A janela decide
+há quantas rodadas a fonte está sem trazer nada; o volume histórico decide se
+ela já teve movimento. Se as duas lessem os mesmos cinco registros, uma fonte
+quebrada limparia o próprio alarme: depois de cinco rodadas zeradas o histórico
+visível seria só de zeros, a média de volume cairia abaixo do limiar e o estado
+voltaria a `ok` — a fonte pareceria mais saudável quanto mais tempo ficasse
+quebrada.
+
 `HealthStatus` só acusa suspeita quando a fonte tinha volume relevante antes: uma fonte que normalmente traz um ou dois anúncios não deve disparar alarme ao passar uma rodada vazia.
 
 - [ ] **Step 4: Rodar o teste e confirmar que passa**
@@ -2882,20 +3628,23 @@ Expected: PASS
 Adicione ao `internal/config/config.go`, dentro de `Config`:
 
 ```go
-	SourceURLs map[string][]string `yaml:"source_urls"`
+	SourceURLs  map[string][]string `yaml:"source_urls"`
+	DevtoolsURL string              `yaml:"devtools_url"`
 ```
 
 Acrescente ao `config/config.yaml`:
 
 ```yaml
+devtools_url: http://127.0.0.1:9222
+
 source_urls:
   olx:
-    - https://www.olx.com.br/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide
-    - https://www.olx.com.br/motos/estado-sp/sao-paulo-e-regiao?q=harley%20street%20glide
-    - https://www.olx.com.br/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20street%20glide
-    - https://www.olx.com.br/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20road%20glide
-    - https://www.olx.com.br/motos/estado-sp/sao-paulo-e-regiao?q=harley%20road%20glide
-    - https://www.olx.com.br/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20road%20glide
   mercadolivre:
     - https://lista.mercadolivre.com.br/harley-davidson-street-glide
     - https://lista.mercadolivre.com.br/harley-davidson-road-glide
@@ -2959,17 +3708,75 @@ git commit -m "feat: crawl orchestration with per-source isolation and health tr
 ### Task 12: Notificação por SMS
 
 **Files:**
-- Create: `internal/notify/notify.go`, `internal/notify/twilio.go`
+- Create: `internal/format/format.go`, `internal/notify/notify.go`, `internal/notify/twilio.go`
 - Modify: `internal/crawl/crawl.go`, `cmd/hunter/main.go`
-- Test: `internal/notify/twilio_test.go`, `internal/crawl/notify_test.go`
+- Test: `internal/format/format_test.go`, `internal/notify/twilio_test.go`, `internal/crawl/notify_test.go`
 
 **Interfaces:**
 - Consumes: `store.Row` (Task 8), `crawl.Report` (Task 11)
 - Produces:
   - `notify.Notifier` interface com `Send(ctx context.Context, message string) error`
-  - `notify.NewTwilioFromEnv() (*notify.Twilio, error)` lendo `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (com `TWILIO_FROM` como alternativa) e `ALERT_TO`
+  - `notify.NewTwilioFromEnv() (*notify.Twilio, error)` lendo `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `ALERT_TO` e `ALERT_CHANNEL` (`whatsapp` ou `sms`, padrão `whatsapp`); o remetente vem de `TWILIO_WHATSAPP_FROM` no canal WhatsApp e de `TWILIO_PHONE_NUMBER` (com `TWILIO_FROM` como alternativa) no SMS. No canal WhatsApp, `From` e `To` recebem o prefixo `whatsapp:`
   - `notify.FormatAlert(r store.Row) string`
+  - `format.Thousands(value int64) string`, consumida pela Task 13
   - `crawl.Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (sent int, err error)`
+
+- [ ] **Step 0: Criar o pacote de formatação compartilhado**
+
+Separação de milhares é usada pelo SMS e pelo dashboard. Ela nasce em um pacote
+próprio para não existir em duas cópias.
+
+`internal/format/format_test.go`:
+
+```go
+package format
+
+import "testing"
+
+func TestThousands(t *testing.T) {
+	cases := []struct {
+		in   int64
+		want string
+	}{
+		{0, "0"},
+		{999, "999"},
+		{1000, "1.000"},
+		{72000, "72.000"},
+		{4000, "4.000"},
+		{1234567, "1.234.567"},
+	}
+	for _, c := range cases {
+		if got := Thousands(c.in); got != c.want {
+			t.Errorf("Thousands(%d) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+```
+
+`internal/format/format.go`:
+
+```go
+package format
+
+import (
+	"strconv"
+	"strings"
+)
+
+func Thousands(value int64) string {
+	digits := strconv.FormatInt(value, 10)
+	var parts []string
+	for len(digits) > 3 {
+		parts = append([]string{digits[len(digits)-3:]}, parts...)
+		digits = digits[:len(digits)-3]
+	}
+	parts = append([]string{digits}, parts...)
+	return strings.Join(parts, ".")
+}
+```
+
+Run: `go test ./internal/format/ -v`
+Expected: PASS
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -3182,6 +3989,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andreabreu76/harley-hunter/internal/format"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
 
@@ -3259,7 +4067,7 @@ func (t *Twilio) Send(ctx context.Context, message string) error {
 func FormatAlert(r store.Row) string {
 	price := "preço não informado"
 	if r.PriceCents != nil {
-		price = "R$ " + formatThousands(*r.PriceCents/100)
+		price = "R$ " + format.Thousands(*r.PriceCents/100)
 	}
 	year := ""
 	if r.Year != nil {
@@ -3269,19 +4077,8 @@ func FormatAlert(r store.Row) string {
 	if r.State != "" {
 		location += "/" + r.State
 	}
-	return fmt.Sprintf("%s%s — %s — %s [%s] %s",
+	return fmt.Sprintf("%s%s - %s - %s [%s] %s",
 		strings.TrimSpace(r.Title), year, price, location, r.Source, r.URL)
-}
-
-func formatThousands(value int64) string {
-	digits := fmt.Sprint(value)
-	var parts []string
-	for len(digits) > 3 {
-		parts = append([]string{digits[len(digits)-3:]}, parts...)
-		digits = digits[:len(digits)-3]
-	}
-	parts = append([]string{digits}, parts...)
-	return strings.Join(parts, ".")
 }
 ```
 
@@ -3300,12 +4097,22 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 	}
 
 	sent := 0
+	seen := make(map[string]bool, len(pending))
 	for _, row := range pending {
+		if row.Fingerprint != "" && row.Km != nil && seen[row.Fingerprint] {
+			if err := s.MarkNotified(row.ID); err != nil {
+				return sent, err
+			}
+			continue
+		}
 		if err := n.Send(ctx, notify.FormatAlert(row)); err != nil {
 			return sent, fmt.Errorf("sending alert for listing %d: %w", row.ID, err)
 		}
 		if err := s.MarkNotified(row.ID); err != nil {
 			return sent, err
+		}
+		if row.Fingerprint != "" && row.Km != nil {
+			seen[row.Fingerprint] = true
 		}
 		sent++
 	}
@@ -3315,7 +4122,55 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 
 Adicione `fmt` e `github.com/andreabreu76/harley-hunter/internal/notify` aos imports do pacote.
 
+DECISÃO POSTERIOR DO DONO (2026-08-09): a entrega por Twilio (SMS/WhatsApp) sai
+do caminho ativo. O token da conta disponível estava selado pelo DigitalOcean e
+era irrecuperável, e em vez de esperar a troca o dono optou por remover a
+dependência: os resultados vivem no dashboard, e anúncio novo em Match dispara
+uma NOTIFICAÇÃO NATIVA DO MACOS, sem credencial nenhuma.
+
+A implementação troca só o transporte: a interface `Notifier` permanece, e
+`notify.MacOS` a implementa via `osascript -e 'display notification ... with
+title ... sound name ...'`. Toda a lógica de fila permanece intacta —
+deduplicação por impressão digital com quilometragem, teto por rodada contando
+envios, `MarkNotified` só após sucesso, reenvio na rodada seguinte em falha. O
+código Twilio é REMOVIDO do repositório (recuperável do histórico git se o SMS
+voltar um dia); `ALERT_TO`, `ALERT_CHANNEL` e as variáveis `TWILIO_*` deixam de
+ser lidas, e a coleta não avisa mais sobre credencial ausente porque não há
+credencial a ter.
+
+AJUSTE APÓS USO REAL: o dono clicou no banner esperando abrir o anúncio, e o
+`display notification` do AppleScript não suporta ação de clique — o macOS abre
+o dono do processo, o que na prática deu uma janela do Finder. O transporte
+passa a ser o `terminal-notifier` (instalado via Homebrew), cujo `-open <url>`
+abre o anúncio no navegador padrão ao clicar. O `osascript` permanece como
+reserva silenciosa quando o binário não existe, sem ação de clique. Isso muda a
+interface: `Notifier.Send` recebe `Alert{Message, URL string}` em vez de string,
+porque o transporte precisa da URL separada do texto. No primeiro banner o macOS
+pede permissão de notificação para o terminal-notifier — conceder uma vez.
+
+Como o `launchd` roda o agente na sessão gráfica do usuário, o `osascript`
+exibe o banner normalmente. O clique no banner não abre URL — o destino do
+clique é o dashboard, que é onde os detalhes moram.
+
+O canal padrão é WhatsApp, pelo mesmo endpoint da Twilio com o prefixo
+`whatsapp:` em `From` e `To`. Três razões: a mensagem vai inteira num único
+envio, sem contagem de segmentos; o link do anúncio chega clicável; e o custo
+por mensagem no Brasil é menor que o de um SMS de vários segmentos. O SMS
+continua disponível via `ALERT_CHANNEL=sms`, como reserva para quando o
+destinatário não puder receber WhatsApp — inclusive no caso de sandbox da
+Twilio, em que o destino precisa ter aderido previamente; se o envio falhar por
+falta de opt-in, o erro da API diz isso e a troca de canal é imediata.
+
 `MarkNotified` só roda depois de o envio ter sucesso — é isso que garante o reenvio na rodada seguinte quando a Twilio falha.
+
+O envio deduplica por impressão digital dentro da rodada, mas SOMENTE quando a
+quilometragem existe. A impressão usa modelo, ano, faixa de km e cidade; sem km
+a faixa vira `?` e ela deixa de distinguir motos diferentes — numa coleta real,
+duas Street Glide 2014 de Curitiba (R$ 72.000 e R$ 75.000, ambas sem km)
+compartilharam a impressão, e a deduplicação cega silenciaria uma delas para
+sempre. Com km presente ela funciona como deve: a mesma FLHX 2014 com 90.195 km
+apareceu em OLX e Mercado Livre com impressão idêntica, e um só SMS basta. Na
+dúvida, dois SMS para a mesma moto é melhor que zero para uma moto real.
 
 - [ ] **Step 5: Ligar ao comando `crawl`**
 
@@ -3356,7 +4211,7 @@ As credenciais já existem em `.env` na raiz do projeto, que o `.gitignore` cobr
 - [ ] **Step 8: Commit**
 
 ```bash
-git add internal/notify internal/crawl cmd/hunter
+git add internal/format internal/notify internal/crawl cmd/hunter
 git commit -m "feat: sms alerts with per-run cap and retry on delivery failure"
 ```
 
@@ -3370,7 +4225,7 @@ git commit -m "feat: sms alerts with per-run cap and retry on delivery failure"
 - Test: `internal/web/server_test.go`
 
 **Interfaces:**
-- Consumes: `store.Store`, `store.Row`, `store.PricePoint` (Task 8); `crawl.HealthStatus` (Task 11)
+- Consumes: `store.Store`, `store.Row`, `store.PricePoint` (Task 8); `crawl.HealthStatus` (Task 11); `format.Thousands` (Task 12)
 - Produces: `web.NewServer(s *store.Store, sources []string) http.Handler`
 
 - [ ] **Step 1: Escrever o teste que falha**
@@ -3635,10 +4490,12 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
 	"github.com/andreabreu76/harley-hunter/internal/crawl"
+	"github.com/andreabreu76/harley-hunter/internal/format"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
@@ -3654,6 +4511,10 @@ type server struct {
 	healthTmpl *template.Template
 }
 
+const healthHistoryRuns = 30
+
+var regionPriority = map[string]int{"RJ": 0, "SP": 1, "PR": 2}
+
 type sourceHealth struct {
 	Name   string
 	Status string
@@ -3662,8 +4523,8 @@ type sourceHealth struct {
 
 func NewServer(s *store.Store, sources []string) http.Handler {
 	funcs := template.FuncMap{
-		"money":      func(cents *int64) string { return formatThousands(*cents / 100) },
-		"moneyCents": func(cents int64) string { return formatThousands(cents / 100) },
+		"money":      func(cents *int64) string { return format.Thousands(*cents / 100) },
+		"moneyCents": func(cents int64) string { return format.Thousands(cents / 100) },
 		"priceDrop":  priceDrop,
 	}
 
@@ -3697,8 +4558,22 @@ func (s *server) list(v model.Verdict, title string) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		sortByRegionPriority(rows)
 		s.render(w, s.listTmpl, map[string]any{"Title": title, "Rows": rows})
 	}
+}
+
+func sortByRegionPriority(rows []store.Row) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		return regionRank(rows[i].State) < regionRank(rows[j].State)
+	})
+}
+
+func regionRank(state string) int {
+	if rank, ok := regionPriority[state]; ok {
+		return rank
+	}
+	return len(regionPriority)
 }
 
 func (s *server) detail(w http.ResponseWriter, r *http.Request) {
@@ -3736,7 +4611,7 @@ func (s *server) setState(w http.ResponseWriter, r *http.Request) {
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	var items []sourceHealth
 	for _, name := range s.sources {
-		counts, err := s.store.RecentRunCounts(name, 5)
+		counts, err := s.store.RecentRunCounts(name, healthHistoryRuns)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -3769,20 +4644,17 @@ func priceDrop(r store.Row) string {
 	if diff <= 0 {
 		return ""
 	}
-	return fmt.Sprintf(" (baixou R$ %s)", formatThousands(diff/100))
-}
-
-func formatThousands(value int64) string {
-	digits := strconv.FormatInt(value, 10)
-	var parts []string
-	for len(digits) > 3 {
-		parts = append([]string{digits[len(digits)-3:]}, parts...)
-		digits = digits[:len(digits)-3]
-	}
-	parts = append([]string{digits}, parts...)
-	return strings.Join(parts, ".")
+	return fmt.Sprintf(" (baixou R$ %s)", format.Thousands(diff/100))
 }
 ```
+
+As listas saem ordenadas por prioridade de região — Rio de Janeiro primeiro,
+depois São Paulo, depois Curitiba — preservando a ordem por data dentro de cada
+uma. O Rio é a região de maior interesse e a de estoque mais escasso: numa
+coleta real, todas as Street Glide cariocas eram de 2017 em diante, fora do
+alvo. Quando um anúncio no alvo finalmente aparecer por lá, ele precisa estar no
+topo, não perdido entre os de Curitiba. A ordenação é estável, então nada além
+da região muda de posição.
 
 - [ ] **Step 5: Ligar ao comando `serve`**
 
@@ -3850,6 +4722,10 @@ set -euo pipefail
 
 PROJECT_DIR="$HOME/src/github.com/andreabreu76/harley-hunter"
 ENV_FILE="$PROJECT_DIR/.env"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME_PROFILE="$HOME/Library/Application Support/harley-hunter-chrome"
+DEVTOOLS_PORT=9222
 
 if [ -f "$ENV_FILE" ]; then
   set -a
@@ -3857,9 +4733,53 @@ if [ -f "$ENV_FILE" ]; then
   set +a
 fi
 
+if ! curl -sf -o /dev/null "http://127.0.0.1:${DEVTOOLS_PORT}/json/version"; then
+  "$CHROME" \
+    --remote-debugging-port="${DEVTOOLS_PORT}" \
+    --user-data-dir="$CHROME_PROFILE" \
+    --no-first-run \
+    --no-default-browser-check \
+    --window-position=-32000,-32000 \
+    --window-size=1280,900 \
+    about:blank >/dev/null 2>&1 &
+
+  for _ in $(seq 1 30); do
+    curl -sf -o /dev/null "http://127.0.0.1:${DEVTOOLS_PORT}/json/version" && break
+    sleep 1
+  done
+fi
+
 cd "$PROJECT_DIR"
 exec "$HOME/bin/hunter" -config config/config.yaml crawl
 ```
+
+O `PATH` é exportado no topo do script porque o `launchd` entrega um ambiente
+mínimo, sem `/opt/homebrew/bin`. Sem essa linha, o notificador não encontra o
+`terminal-notifier`, cai em silêncio no fallback de `osascript` — que não tem
+ação de clique — e o clique no banner volta a abrir o Finder, mas somente nas
+execuções agendadas: da linha de comando tudo funciona, o que torna a regressão
+quase impossível de diagnosticar. Pelo mesmo motivo o notificador avisa uma vez
+no stderr quando degrada para o fallback, para o log da coleta denunciar um job
+mal configurado.
+
+O passo de verificação do agendamento precisa incluir UM ciclo completo real:
+esperar o `launchd` disparar, conferir no log que a coleta rodou, e conferir que
+o banner veio do terminal-notifier (com clique), não do fallback.
+
+O Chrome da coleta é uma instância DEDICADA, com `--user-data-dir` próprio, e
+nunca o navegador de uso diário. São duas razões independentes. A primeira é
+segurança de sessão: a coleta abre e fecha abas por conta própria, e durante o
+desenvolvimento houve um episódio, não reproduzido, em que todas as abas do
+navegador sumiram — não vale arriscar as abas de trabalho de alguém por causa de
+um robô que roda a cada duas horas. A segunda é que a fase 2 vai precisar de uma
+sessão logada em Instagram e Facebook, e essa sessão deve viver num perfil
+separado do pessoal.
+
+A janela é posicionada fora da tela em vez de rodar em modo headless: o
+Cloudflare bloqueia headless, que foi justamente o que motivou usar o navegador
+real. O script não encerra o Chrome ao terminar — deixá-lo vivo evita pagar a
+inicialização a cada coleta, e o `curl` no início reaproveita a instância que já
+estiver de pé.
 
 ```bash
 chmod +x deploy/hunter-crawl.sh

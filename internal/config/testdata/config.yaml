@@ -1,0 +1,20 @@
+database_path: hunter.db
+sources:
+  - olx
+  - mercadolivre
+devtools_url: http://127.0.0.1:9222
+source_urls:
+  olx:
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp?q=harley%20street%20glide
+  mercadolivre:
+    - https://lista.mercadolivre.com.br/harley-davidson-street-glide
+match:
+  years: [2014, 2015]
+  maybe_years: [2013, 2016]
+  max_price_cents: 7500000
+  maybe_max_price_cents: 8500000
+crawl:
+  timeout_seconds: 90
+  max_concurrent: 4
+  max_alerts_per_run: 5
