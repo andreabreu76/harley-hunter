@@ -971,6 +971,8 @@ func TestParseLocation(t *testing.T) {
 		{"Campinas - São Paulo - Brasil", "campinas", "SP"},
 		{"Volta Redonda - Rio de Janeiro - Brasil", "volta redonda", "RJ"},
 		{"Santos, São Paulo (Zona Leste)", "santos", "SP"},
+		{"Vila Isabel, Volta Redonda - RJ", "volta redonda", "RJ"},
+		{"Centro, Campinas - SP", "campinas", "SP"},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -1166,9 +1168,9 @@ func ParseLocation(s string) (string, string) {
 		return fallback, state
 	}
 
-	for i, seg := range segments {
+	for i := len(segments) - 1; i >= 0; i-- {
 		if i != stateIndex {
-			return seg, state
+			return segments[i], state
 		}
 	}
 	if stateIndex >= 0 {
@@ -1266,6 +1268,14 @@ simultaneamente cidade e estado, e o que os desambigua é a posição: em
 `"Rio de Janeiro, Copacabana"` a capital vem primeiro e é cidade; em
 `"Cabo Frio, Rio de Janeiro"` vem depois e é estado. Siglas de duas letras
 continuam aceitas em qualquer posição.
+
+Quando nenhum segmento consta da tabela de cidades, o fallback devolve o
+ÚLTIMO segmento que não é o estado, não o primeiro. Anúncio real põe a cidade
+imediatamente antes do estado, e o que vier antes dela é bairro:
+`"Vila Isabel, Volta Redonda - RJ"` deve devolver `volta redonda`, não
+`vila isabel`. O tier não muda nesse caso, já que nenhuma das duas está na
+tabela metropolitana, mas a cidade é gravada no banco e exibida no dashboard,
+então o dado errado apareceria para quem revisa.
 
 O gate é por posição inicial e não por posição final porque o sufixo depois do
 estado é comum: `"Campinas - São Paulo - Brasil"` e
