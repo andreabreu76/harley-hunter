@@ -69,13 +69,16 @@ func splitSegments(folded string) []string {
 }
 
 func findState(segments []string) (string, int) {
-	for i := len(segments) - 1; i >= 0; i-- {
+	last := len(segments) - 1
+	for i := last; i >= 0; i-- {
 		seg := segments[i]
 		if len(seg) == 2 && isBrazilianState(strings.ToUpper(seg)) {
 			return strings.ToUpper(seg), i
 		}
-		if uf, ok := stateNames[seg]; ok {
-			return uf, i
+		if i == last {
+			if uf, ok := stateNames[seg]; ok {
+				return uf, i
+			}
 		}
 	}
 	return "", -1
