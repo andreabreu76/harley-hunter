@@ -47,10 +47,12 @@ func ParseLocation(s string) (string, string) {
 		return fallback, state
 	}
 
-	for i, seg := range segments {
-		if i != stateIndex {
-			return seg, state
-		}
+	start := len(segments) - 1
+	if stateIndex >= 0 {
+		start = stateIndex - 1
+	}
+	if start >= 0 {
+		return segments[start], state
 	}
 	if stateIndex >= 0 {
 		return cityKey(segments[stateIndex]), state
