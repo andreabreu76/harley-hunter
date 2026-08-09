@@ -71,6 +71,70 @@ func TestNormalizeLeavesMissingFieldsNil(t *testing.T) {
 	}
 }
 
+func TestNormalizeResolvesCityDeterministically(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "det1",
+		RawText:    "Street Glide 2015 em Sao Jose dos Pinhais, aceito troca",
+	}
+	first := Normalize(raw)
+	for i := 0; i < 50; i++ {
+		if got := Normalize(raw); got.City != first.City || got.Fingerprint != first.Fingerprint {
+			t.Fatalf("run %d gave %q/%s, first gave %q/%s", i, got.City, got.Fingerprint, first.City, first.Fingerprint)
+		}
+	}
+	if first.City != "sao jose dos pinhais" {
+		t.Errorf("City = %q, want sao jose dos pinhais", first.City)
+	}
+}
+
+func TestNormalizeCityMatchesWholeWordsOnly(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "word1",
+		RawText:    "Street Glide 2015, mais imagens no WhatsApp, Rio de Janeiro RJ",
+	}
+	if l := Normalize(raw); l.City != "rio de janeiro" {
+		t.Errorf("City = %q, want rio de janeiro", l.City)
+	}
+}
+
+func TestNormalizePrefersLongestCityMatch(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "long1",
+		RawText:    "Street Glide 2015, moto na Lapa, Sao Paulo capital",
+	}
+	l := Normalize(raw)
+	if l.City != "sao paulo" || l.State != "SP" {
+		t.Errorf("location = %q/%q, want sao paulo/SP", l.City, l.State)
+	}
+}
+
+func TestNormalizeIgnoresFiscalYears(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "fiscal1",
+		RawText:    "IPVA 2026 pago. Vendo Road Glide 2015, Curitiba - PR",
+	}
+	l := Normalize(raw)
+	if l.Year == nil || *l.Year != 2015 {
+		t.Errorf("Year = %v, want 2015", l.Year)
+	}
+}
+
+func TestNormalizeReadsPriceAfterMileage(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "instagram",
+		ExternalID: "price1",
+		RawText:    "Street Glide 2015, 42 mil km, valor 74 mil, Curitiba - PR",
+	}
+	l := Normalize(raw)
+	if l.PriceCents == nil || *l.PriceCents != 7400000 {
+		t.Errorf("PriceCents = %v, want 7400000", l.PriceCents)
+	}
+}
+
 func TestFingerprintIsStableAndDiscriminating(t *testing.T) {
 	year := 2015
 	km := 31200

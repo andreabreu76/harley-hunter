@@ -24,7 +24,10 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	if m := thousandsSuffix.FindStringSubmatch(s); m != nil && !isMileageWord(m[2]) {
+	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
+		if isMileageWord(m[2]) {
+			continue
+		}
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
 			return plausible(int64(value*1000*100 + 0.5))
 		}

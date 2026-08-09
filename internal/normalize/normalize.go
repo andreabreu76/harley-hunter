@@ -4,12 +4,15 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
 )
 
 const mileageBucketSize = 5000
+
+var fiscalYear = regexp.MustCompile(`(?i)\b(ipva|licenciamento|crlv|seguro|financiamento)\s*(?:de\s*)?(19|20)\d{2}`)
 
 func Normalize(raw model.RawListing) model.Listing {
 	full := strings.TrimSpace(raw.Title + " " + raw.RawText)
@@ -33,7 +36,7 @@ func Normalize(raw model.RawListing) model.Listing {
 
 	if year, ok := ParseYear(raw.YearText); ok {
 		l.Year = &year
-	} else if year, ok := ParseYear(full); ok {
+	} else if year, ok := ParseYear(fiscalYear.ReplaceAllString(full, " ")); ok {
 		l.Year = &year
 	}
 
@@ -54,12 +57,41 @@ func Normalize(raw model.RawListing) model.Listing {
 
 func locationFromText(text string) (string, string) {
 	folded := Fold(text)
+	bestCity, bestState, bestIndex := "", "", 0
 	for city, state := range metroCities {
-		if strings.Contains(folded, city) {
-			return city, state
+		index := wordIndex(folded, city)
+		if index < 0 {
+			continue
+		}
+		if bestCity == "" || len(city) > len(bestCity) ||
+			(len(city) == len(bestCity) && index < bestIndex) {
+			bestCity, bestState, bestIndex = city, state, index
 		}
 	}
-	return "", ""
+	return bestCity, bestState
+}
+
+func wordIndex(text, term string) int {
+	for from := 0; from <= len(text)-len(term); {
+		offset := strings.Index(text[from:], term)
+		if offset < 0 {
+			return -1
+		}
+		start := from + offset
+		if !wordChar(text, start-1) && !wordChar(text, start+len(term)) {
+			return start
+		}
+		from = start + 1
+	}
+	return -1
+}
+
+func wordChar(text string, i int) bool {
+	if i < 0 || i >= len(text) {
+		return false
+	}
+	c := text[i]
+	return c == '-' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
 }
 
 func Fingerprint(l model.Listing) string {

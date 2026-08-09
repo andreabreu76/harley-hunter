@@ -23,6 +23,7 @@ func TestParsePrice(t *testing.T) {
 		{"R$ 1,00", 0, false},
 		{"12.000 km", 0, false},
 		{"12 mil km", 0, false},
+		{"42 mil km, valor 74 mil", 7400000, true},
 		{"12 mil kms", 0, false},
 		{"42 mil kms rodados", 0, false},
 		{"12 mil quilometros", 0, false},
