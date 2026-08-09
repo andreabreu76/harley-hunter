@@ -184,6 +184,32 @@ renderizado; título e descrição vão para os parsers de texto livre.
       legível quando sem sessão
 - [ ] Review final da branch antes do merge
 
+## Watch list herdada do review final da fase 1
+
+1. **`ParsePrice` sobre texto livre de verdade.** OLX não manda corpo e ML só
+   manda atributos, então as 43 regras de preço da fase 1 hoje só enxergam
+   título — a proteção dos casos difíceis (total financiado, "De R$ X por
+   R$ Y", "até R$ X" sozinho) repousa em raciocínio, não em observação.
+   Instagram e Marketplace são legenda pura e exercitam tudo na primeira
+   coleta. Reabrir os parked de preço ANTES de escrever esses coletores.
+2. **Chave de fonte é literal repetido em cinco lugares** (config → construtor
+   → source_runs → saúde → RawListing.Source → dedup). Quatro fontes novas
+   multiplicam os pontos de divergência silenciosa. Extrair constantes na
+   Task 1.
+3. **Fingerprint vai ganhar um terceiro uso** (marcação de reanúncio) além dos
+   dois atuais (dedup de notificação, índice). Sem estado e variante no seed e
+   com balde de 5.000 km, colisão entre motos DIFERENTES marca a segunda como
+   notificada sem nunca enviar. Decidir se é um campo ou três antes da Task 6.
+4. **Expiração precisa aterrissar antes das fontes novas** — nada escreve
+   `gone` hoje e /rejected cresce sem teto. Antecipar a Task 6 se o volume
+   incomodar.
+5. **`source_runs.error` é gravado e nunca lido.** Com seis fontes, "suspect"
+   sem motivo visível vira rotina. Exibir o último erro no /health é o menor
+   investimento com maior retorno da fase.
+6. **URL de fonte nova no notifier**: o guard `https://` existe; Instagram e
+   Marketplace emitem hrefs mais variados — manter o guard como está e testar
+   contra os permalinks reais.
+
 ## Riscos aceitos (herdados do spec)
 
 Instagram e Marketplace violam ToS da Meta; risco de bloqueio da conta usada é
