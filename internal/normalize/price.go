@@ -24,7 +24,7 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	if m := thousandsSuffix.FindStringSubmatch(s); m != nil && !strings.EqualFold(m[2], "km") {
+	if m := thousandsSuffix.FindStringSubmatch(s); m != nil && !isMileageWord(m[2]) {
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
 			return plausible(int64(value*1000*100 + 0.5))
 		}
@@ -43,6 +43,11 @@ func ParsePrice(s string) (int64, bool) {
 	}
 
 	return 0, false
+}
+
+func isMileageWord(s string) bool {
+	s = strings.ToLower(s)
+	return strings.HasPrefix(s, "km") || strings.HasPrefix(s, "quil")
 }
 
 func decimalize(s string) string {
