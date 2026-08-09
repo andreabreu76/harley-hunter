@@ -1,8 +1,10 @@
 package notify
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
 	"reflect"
 	"strings"
 	"testing"
@@ -163,7 +165,7 @@ func TestNewMacOSLooksTheBinaryUpOnce(t *testing.T) {
 	n := newMacOS(func(string) (string, error) {
 		lookups++
 		return "/opt/homebrew/bin/terminal-notifier", nil
-	})
+	}, io.Discard)
 	_, run := recorder()
 	n.run = run
 
@@ -178,8 +180,30 @@ func TestNewMacOSLooksTheBinaryUpOnce(t *testing.T) {
 }
 
 func TestNewMacOSFallsBackWhenLookupFails(t *testing.T) {
-	n := newMacOS(func(string) (string, error) { return "", errors.New("not found") })
+	n := newMacOS(func(string) (string, error) { return "", errors.New("not found") }, io.Discard)
 	if n.binaryPath != "" {
 		t.Errorf("binaryPath = %q, want empty so Send takes the osascript path", n.binaryPath)
+	}
+}
+
+func TestNewMacOSWarnsWhenTheBinaryIsMissing(t *testing.T) {
+	var warn bytes.Buffer
+	newMacOS(func(string) (string, error) { return "", errors.New("not found") }, &warn)
+
+	got := warn.String()
+	if !strings.Contains(got, notifierBin) {
+		t.Fatalf("warning = %q, want it to name %s: a scheduled run degrades silently otherwise", got, notifierBin)
+	}
+	if !strings.Contains(got, "PATH=") {
+		t.Errorf("warning = %q, want the PATH in it: launchd hands over a minimal one and that is the usual cause", got)
+	}
+}
+
+func TestNewMacOSStaysQuietWhenTheBinaryIsPresent(t *testing.T) {
+	var warn bytes.Buffer
+	newMacOS(func(string) (string, error) { return "/opt/homebrew/bin/terminal-notifier", nil }, &warn)
+
+	if warn.Len() != 0 {
+		t.Errorf("warning = %q, want nothing on the healthy path", warn.String())
 	}
 }

@@ -3,6 +3,8 @@ package notify
 import (
 	"context"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -19,13 +21,15 @@ type MacOS struct {
 }
 
 func NewMacOS() *MacOS {
-	return newMacOS(exec.LookPath)
+	return newMacOS(exec.LookPath, os.Stderr)
 }
 
-func newMacOS(lookPath func(string) (string, error)) *MacOS {
+func newMacOS(lookPath func(string) (string, error), warn io.Writer) *MacOS {
 	path, err := lookPath(notifierBin)
 	if err != nil {
 		path = ""
+		fmt.Fprintf(warn, "%s not found in PATH=%s: alerts fall back to osascript, whose banner has no click action\n",
+			notifierBin, os.Getenv("PATH"))
 	}
 	return &MacOS{
 		binaryPath: path,
