@@ -4722,6 +4722,7 @@ set -euo pipefail
 
 PROJECT_DIR="$HOME/src/github.com/andreabreu76/harley-hunter"
 ENV_FILE="$PROJECT_DIR/.env"
+export PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 CHROME_PROFILE="$HOME/Library/Application Support/harley-hunter-chrome"
 DEVTOOLS_PORT=9222
@@ -4751,6 +4752,19 @@ fi
 cd "$PROJECT_DIR"
 exec "$HOME/bin/hunter" -config config/config.yaml crawl
 ```
+
+O `PATH` é exportado no topo do script porque o `launchd` entrega um ambiente
+mínimo, sem `/opt/homebrew/bin`. Sem essa linha, o notificador não encontra o
+`terminal-notifier`, cai em silêncio no fallback de `osascript` — que não tem
+ação de clique — e o clique no banner volta a abrir o Finder, mas somente nas
+execuções agendadas: da linha de comando tudo funciona, o que torna a regressão
+quase impossível de diagnosticar. Pelo mesmo motivo o notificador avisa uma vez
+no stderr quando degrada para o fallback, para o log da coleta denunciar um job
+mal configurado.
+
+O passo de verificação do agendamento precisa incluir UM ciclo completo real:
+esperar o `launchd` disparar, conferir no log que a coleta rodou, e conferir que
+o banner veio do terminal-notifier (com clique), não do fallback.
 
 O Chrome da coleta é uma instância DEDICADA, com `--user-data-dir` próprio, e
 nunca o navegador de uso diário. São duas razões independentes. A primeira é
