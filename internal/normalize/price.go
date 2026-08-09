@@ -24,12 +24,18 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	if m := priceWithSymbol.FindStringSubmatch(s); m != nil {
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			if cents, ok := plausible(int64(value*100 + 0.5)); ok {
-				return cents, true
-			}
+	best := int64(0)
+	for _, m := range priceWithSymbol.FindAllStringSubmatch(s, -1) {
+		value, err := strconv.ParseFloat(decimalize(m[1]), 64)
+		if err != nil {
+			continue
 		}
+		if cents, ok := plausible(int64(value*100 + 0.5)); ok && cents > best {
+			best = cents
+		}
+	}
+	if best > 0 {
+		return best, true
 	}
 
 	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
@@ -56,7 +62,7 @@ func ParsePrice(s string) (int64, bool) {
 
 var nonPricePrefixes = []string{
 	"km", "quil", "curtid", "seguidor", "visualiza", "like", "view",
-	"inscrit", "comentari", "compartilh", "avalia",
+	"inscrit", "coment", "compartilh", "avalia",
 }
 
 func isNonPriceWord(s string) bool {
