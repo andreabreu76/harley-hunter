@@ -99,6 +99,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 	if _, err := db.Exec(schema); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
 	return &Store{db: db}, nil
