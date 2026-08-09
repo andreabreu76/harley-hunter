@@ -965,6 +965,9 @@ func TestParseLocation(t *testing.T) {
 		{"Cabo Frio, Rio de Janeiro", "cabo frio", "RJ"},
 		{"Rio de Janeiro", "rio de janeiro", "RJ"},
 		{"São Paulo", "sao paulo", "SP"},
+		{"Rio de Janeiro, Copacabana", "rio de janeiro", ""},
+		{"São Paulo, Moema", "sao paulo", ""},
+		{"Vila Mariana, São Paulo", "vila mariana", "SP"},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -1182,13 +1185,16 @@ func splitSegments(folded string) []string {
 }
 
 func findState(segments []string) (string, int) {
-	for i := len(segments) - 1; i >= 0; i-- {
+	last := len(segments) - 1
+	for i := last; i >= 0; i-- {
 		seg := segments[i]
 		if len(seg) == 2 && isBrazilianState(strings.ToUpper(seg)) {
 			return strings.ToUpper(seg), i
 		}
-		if uf, ok := stateNames[seg]; ok {
-			return uf, i
+		if i == last {
+			if uf, ok := stateNames[seg]; ok {
+				return uf, i
+			}
 		}
 	}
 	return "", -1
@@ -1251,6 +1257,13 @@ a cidade sai como `sao paulo` e uma moto em Campinas é classificada como Match
 metropolitano. O `stateIndex` existe só para isso. Quando o estado é o único
 segmento, como em `"Rio de Janeiro"` sem UF, o fallback final o reaproveita como
 cidade, que é o comportamento correto para a capital.
+
+A terceira: um nome de estado por extenso só conta como estado no último
+segmento. `"Rio de Janeiro"` e `"São Paulo"` são simultaneamente cidade e
+estado, então em `"Rio de Janeiro, Copacabana"` — cidade primeiro, bairro
+depois — o nome seria lido como estado, a cidade viraria `copacabana` e um
+anúncio na capital cairia para Talvez. Restringir a forma por extenso ao último
+segmento resolve, e siglas de duas letras continuam aceitas em qualquer posição.
 
 A segunda: a UF colada por hífen ou espaço simples, `"Curitiba-PR"` e
 `"Curitiba PR"`, não é separada pela segmentação, porque o hífen só separa com
