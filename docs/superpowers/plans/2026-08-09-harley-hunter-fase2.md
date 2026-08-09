@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ampliar a cobertura de fontes — Webmotors, iCarros, Instagram e Facebook Marketplace — e completar o ciclo de vida do anúncio com expiração e marcação de reanúncio.
+**Goal:** Ampliar a cobertura de fontes — Webmotors, Mobiauto, Instagram e Facebook Marketplace — e completar o ciclo de vida do anúncio com expiração e marcação de reanúncio.
 
 **Architecture:** Cada fonte nova implementa a interface `source.Source` existente sobre o seam `PageFetcher`. O pipeline (normalize → match → store → notify) não muda. A fase acrescenta expiração (`status = gone`) e reanúncio visível no dashboard.
 
@@ -78,12 +78,22 @@ assumir.
 - [ ] Sanity check normalize+match com contagens no relatório
 - [ ] Config e main.go ligados; commit
 
-### Task 2: Coletor iCarros
+### Task 2: Coletor Mobiauto (substitui iCarros)
+
+O iCarros saiu do plano por premissa falsa: o site não tem categoria de motos —
+provado por quatro vias (fallback genérico igual ao de slug inexistente,
+catálogo de marcas sem nenhuma fabricante de moto, sitemap de 1.580 anúncios só
+com carros, página de "resultados" sem nenhum link de anúncio). Substituto
+verificado no mesmo passo: Mobiauto, com 305 Harley-Davidson anunciadas,
+HTTP simples 200 sem bloqueio e `__NEXT_DATA__` para parse.
 
 Mesma estrutura, mesmo contrato de teste e mesmos passos da Task 1, para
-`icarros`. Files/Interfaces análogos (`NewICarros`, `ParseICarros`).
+`mobiauto` (`NewMobiauto`, `ParseMobiauto`). Diferença relevante: é o primeiro
+consumidor real do caminho HTTP — criar `HTTPFetcher` implementando
+`PageFetcher` com `defaultUserAgent`, e a fonte continua coletando mesmo sem o
+Chrome de pé.
 
-- [ ] Fixture real; transporte por evidência; TDD; sanity check; ligado; commit
+- [ ] Fixture real; HTTPFetcher; TDD; sanity check; ligado; coleta real; commit
 
 ### Task 3: Extrair o laço de coleta compartilhado
 
