@@ -453,6 +453,9 @@ func TestParsePrice(t *testing.T) {
 		{"Entrada de R$ 20.000, moto R$ 74.900", 7490000, true},
 		{"R$ 74.900, aceito entrada de R$ 20.000", 7490000, true},
 		{"Parcelas de R$ 1.800, valor total R$ 74.900", 7490000, true},
+		{"Moto R$ 74.900, troco por ate R$ 90.000", 7490000, true},
+		{"Street Glide R$ 74.900, aceito troca ate R$ 60.000", 7490000, true},
+		{"Road Glide R$ 72.000, avalio moto ate R$ 95.000", 7200000, true},
 		{"12 mil kms", 0, false},
 		{"42 mil kms rodados", 0, false},
 		{"12 mil quilometros", 0, false},
@@ -481,6 +484,13 @@ mais confiável de preço num texto qualquer. Nenhum ramo desiste quando o valor
 sai implausível: a varredura continua para o próximo candidato. Sem isso, uma
 legenda como `"3 mil curtidas no post, R$ 74.900"` travaria no `3 mil`, que é
 baixo demais, e o preço marcado com `R$` nunca seria alcançado.
+
+Valores precedidos por vocabulário de troca são descartados antes da comparação.
+`"Moto R$ 74.900, troco por até R$ 90.000"` cita um teto de avaliação da moto do
+comprador, não o preço da que está à venda — e R$ 90.000 não é implausível, é
+aceito como preço e depois reprova no matcher, fazendo uma moto dentro do alvo
+desaparecer. A janela olha os 24 caracteres anteriores ao `R$`, o bastante para
+alcançar "troco por até" sem invadir a frase anterior.
 
 Entre vários valores marcados com `R$`, vence o MAIOR plausível. Anúncio de moto
 financiada cita entrada e parcela ao lado do preço — `"Entrada de R$ 20.000,
@@ -625,8 +635,11 @@ func ParsePrice(s string) (int64, bool) {
 	}
 
 	best := int64(0)
-	for _, m := range priceWithSymbol.FindAllStringSubmatch(s, -1) {
-		value, err := strconv.ParseFloat(decimalize(m[1]), 64)
+	for _, loc := range priceWithSymbol.FindAllStringSubmatchIndex(s, -1) {
+		if precededByNonPriceContext(s, loc[0]) {
+			continue
+		}
+		value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64)
 		if err != nil {
 			continue
 		}
@@ -669,6 +682,22 @@ func isNonPriceWord(s string) bool {
 	s = strings.ToLower(s)
 	for _, prefix := range nonPricePrefixes {
 		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+var nonPriceContext = []string{"troc", "permut", "avali", "ate ", "até "}
+
+func precededByNonPriceContext(s string, at int) bool {
+	start := at - 24
+	if start < 0 {
+		start = 0
+	}
+	window := strings.ToLower(s[start:at])
+	for _, word := range nonPriceContext {
+		if strings.Contains(window, word) {
 			return true
 		}
 	}
