@@ -109,6 +109,21 @@ func TestLoadRejectsMissingFile(t *testing.T) {
 		t.Fatal("Load should return an error for a missing file")
 	}
 }
+
+func TestLoadRejectsEmptyMatchCriteria(t *testing.T) {
+	if _, err := Load("testdata/no-match.yaml"); err == nil {
+		t.Fatal("Load should reject a config with no match criteria")
+	}
+}
+```
+
+`internal/config/testdata/no-match.yaml` — um config sem a seção `match`, que
+deve ser recusado:
+
+```yaml
+database_path: hunter.db
+sources:
+  - olx
 ```
 
 `internal/config/testdata/config.yaml`:
@@ -128,6 +143,13 @@ crawl:
   max_concurrent: 4
   max_sms_per_run: 5
 ```
+
+Critérios de match vazios são recusados na carga, e não tratados como
+permissivos. Um `config.yaml` sem a seção `match` daria `Years: nil` e
+`MaxPriceCents: 0`, e nesse estado todo anúncio com ano e preço conhecidos é
+rejeitado: a coleta roda inteira, não levanta erro nenhum e não encontra nada.
+É o mesmo modo de falha silencioso que o painel de saúde das fontes existe para
+combater — o sistema parecendo funcionar enquanto está cego.
 
 - [ ] **Step 3: Rodar o teste e confirmar a falha**
 
@@ -179,6 +201,12 @@ func Load(path string) (Config, error) {
 	}
 	if len(cfg.Sources) == 0 {
 		return Config{}, fmt.Errorf("config has no sources enabled")
+	}
+	if len(cfg.Match.Years) == 0 {
+		return Config{}, fmt.Errorf("config has no target years")
+	}
+	if cfg.Match.MaxPriceCents <= 0 {
+		return Config{}, fmt.Errorf("config has no max price")
 	}
 	return cfg, nil
 }
