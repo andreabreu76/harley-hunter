@@ -87,7 +87,7 @@ func ParseMercadoLivre(body io.Reader) ([]model.RawListing, error) {
 	cards := doc.Find(mlCardSelector)
 	if cards.Length() == 0 {
 		if doc.Find(mlEmptySelector).Length() > 0 {
-			return nil, nil
+			return []model.RawListing{}, nil
 		}
 		return nil, errors.New("mercadolivre result list not found: page structure changed or request was blocked")
 	}
@@ -124,6 +124,9 @@ func ParseMercadoLivre(body io.Reader) ([]model.RawListing, error) {
 		})
 	})
 
+	if len(listings) == 0 {
+		return nil, fmt.Errorf("mercadolivre read %d cards and no listing: card markup changed", cards.Length())
+	}
 	return listings, nil
 }
 

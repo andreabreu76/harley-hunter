@@ -43,13 +43,28 @@ func DetectBike(text string) (string, string) {
 }
 
 func detectVariant(t, compact, cvoCode, specialCode string) string {
-	if strings.Contains(t, "cvo") || strings.Contains(t, cvoCode) {
+	if strings.Contains(t, "cvo") || containsCode(compact, cvoCode) {
 		return model.VariantCVO
 	}
-	if containsAny(t, compact, "special", "especial") || strings.Contains(t, specialCode) {
+	if containsAny(t, compact, "special", "especial") || containsCode(compact, specialCode) {
 		return model.VariantSpecial
 	}
 	return model.VariantBase
+}
+
+func containsCode(compact, code string) bool {
+	for from := 0; from <= len(compact)-len(code); {
+		offset := strings.Index(compact[from:], code)
+		if offset < 0 {
+			return false
+		}
+		end := from + offset + len(code)
+		if end >= len(compact) || compact[end] < 'a' || compact[end] > 'z' {
+			return true
+		}
+		from = from + offset + 1
+	}
+	return false
 }
 
 func isHarley(t string) bool {

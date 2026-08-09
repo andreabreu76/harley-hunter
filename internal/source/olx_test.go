@@ -116,6 +116,13 @@ func TestParseOLXReturnsErrorWhenPayloadHasNoAds(t *testing.T) {
 	}
 }
 
+func TestParseOLXReturnsErrorWhenNoAdYieldsAListing(t *testing.T) {
+	page := olxPage(t, `1b:{"ads":[{"subject":"Street Glide"},{"subject":"Road Glide"}]}`)
+	if _, err := ParseOLX(page); err == nil {
+		t.Fatal("ParseOLX should return an error when the ads array is populated but no ad can be read")
+	}
+}
+
 func TestParseOLXFallsBackToTheLocationLabel(t *testing.T) {
 	page := olxPage(t, `1b:{"ads":[{"listId":1,"url":"https://pr.olx.com.br/d/1","subject":"Street Glide","locationDetails":null,"location":"Curitiba, Batel"}]}`)
 

@@ -107,7 +107,7 @@ func TestParseMercadoLivreFeedsYearAndKmToTheNormalizer(t *testing.T) {
 	t.Fatal("listing MLB4820336511 not found in the fixture")
 }
 
-func TestParseMercadoLivreTakesTheCurrentPriceNotThePreviousOne(t *testing.T) {
+func TestParseMercadoLivreTakesTheCurrentPriceNotThePreviousOneSynthetic(t *testing.T) {
 	listings, err := ParseMercadoLivre(stringReader(mercadoLivreCard(`
 		<div class="poly-component__price">
 			<div class="poly-price__labels">
@@ -168,17 +168,48 @@ func TestParseMercadoLivreReadsCatalogItemIDs(t *testing.T) {
 	}
 }
 
-func TestParseMercadoLivreSkipsCardsWithoutALink(t *testing.T) {
+func TestParseMercadoLivreSkipsASingleCardWithoutALink(t *testing.T) {
 	page := `<html><body><ol class="ui-search-layout">` +
 		`<li class="ui-search-layout__item"><div class="poly-card"><h3>Street Glide</h3></div></li>` +
-		`</ol></body></html>`
+		`<li class="ui-search-layout__item"><div class="poly-card"><h3>` +
+		`<a class="poly-component__title" href="https://moto.mercadolivre.com.br/MLB-4820336511-street-glide-_JM">Street Glide</a>` +
+		`</h3></div></li></ol></body></html>`
 
 	listings, err := ParseMercadoLivre(stringReader(page))
 	if err != nil {
-		t.Fatalf("ParseMercadoLivre: %v", err)
+		t.Fatalf("one broken card among good ones is not a page failure: %v", err)
 	}
-	if len(listings) != 0 {
-		t.Fatalf("len(listings) = %d, want 0: a card without a link is not a listing", len(listings))
+	if len(listings) != 1 {
+		t.Fatalf("len(listings) = %d, want 1: a card without a link is not a listing", len(listings))
+	}
+}
+
+func TestParseMercadoLivreReturnsErrorWhenNoCardYieldsAListing(t *testing.T) {
+	page := `<html><body><ol class="ui-search-layout">` +
+		`<li class="ui-search-layout__item"><div class="poly-card"><h3>Street Glide</h3></div></li>` +
+		`<li class="ui-search-layout__item"><div class="poly-card"><h3>Road Glide</h3></div></li>` +
+		`</ol></body></html>`
+
+	if _, err := ParseMercadoLivre(stringReader(page)); err == nil {
+		t.Fatal("ParseMercadoLivre should return an error when cards are present but none can be read")
+	}
+}
+
+func TestParseMercadoLivreReturnsErrorWhenTheIDPatternStopsMatching(t *testing.T) {
+	page := `<html><body><ol class="ui-search-layout">` +
+		`<li class="ui-search-layout__item"><div class="poly-card"><h3>` +
+		`<a class="poly-component__title" href="https://moto.mercadolivre.com.br/street-glide-2015">Street Glide</a>` +
+		`</h3></div></li></ol></body></html>`
+
+	if _, err := ParseMercadoLivre(stringReader(page)); err == nil {
+		t.Fatal("ParseMercadoLivre should return an error when no href carries a readable item id")
+	}
+}
+
+func TestParseMercadoLivreReturnsAnEmptySliceWhenSearchIsEmpty(t *testing.T) {
+	listings := parseMercadoLivreFixture(t, "testdata/mercadolivre-search-empty.html")
+	if listings == nil {
+		t.Fatal("an empty search should answer with an empty slice, not nil")
 	}
 }
 

@@ -123,6 +123,10 @@ func ParseOLX(body io.Reader) ([]model.RawListing, error) {
 			ImageURL:     olxImage(ad),
 		})
 	}
+
+	if len(ads) > 0 && len(listings) == 0 {
+		return nil, fmt.Errorf("olx read %d ads and no listing: ad payload changed", len(ads))
+	}
 	return listings, nil
 }
 
