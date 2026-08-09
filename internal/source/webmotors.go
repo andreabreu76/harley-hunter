@@ -44,39 +44,7 @@ func NewWebmotors(fetcher PageFetcher, baseURLs []string) *Webmotors {
 func (w *Webmotors) Name() string { return model.SourceWebmotors }
 
 func (w *Webmotors) Fetch(ctx context.Context) ([]model.RawListing, error) {
-	var all []model.RawListing
-	for i, url := range w.baseURLs {
-		if err := ctx.Err(); err != nil {
-			return all, err
-		}
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return all, ctx.Err()
-			case <-time.After(w.delay):
-			}
-		}
-
-		listings, err := w.fetchOne(ctx, url)
-		all = append(all, listings...)
-		if err != nil {
-			return all, err
-		}
-	}
-	return all, nil
-}
-
-func (w *Webmotors) fetchOne(ctx context.Context, url string) ([]model.RawListing, error) {
-	page, err := w.fetcher.FetchPage(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-
-	listings, err := ParseWebmotors(strings.NewReader(page))
-	if err != nil {
-		return listings, fmt.Errorf("parsing %s: %w", url, err)
-	}
-	return listings, nil
+	return fetchPages(ctx, w.fetcher, w.baseURLs, w.delay, ParseWebmotors)
 }
 
 type webmotorsResponse struct {

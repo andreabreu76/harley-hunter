@@ -40,39 +40,7 @@ func NewMobiauto(fetcher PageFetcher, baseURLs []string) *Mobiauto {
 func (m *Mobiauto) Name() string { return model.SourceMobiauto }
 
 func (m *Mobiauto) Fetch(ctx context.Context) ([]model.RawListing, error) {
-	var all []model.RawListing
-	for i, url := range m.baseURLs {
-		if err := ctx.Err(); err != nil {
-			return all, err
-		}
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return all, ctx.Err()
-			case <-time.After(m.delay):
-			}
-		}
-
-		listings, err := m.fetchOne(ctx, url)
-		all = append(all, listings...)
-		if err != nil {
-			return all, err
-		}
-	}
-	return all, nil
-}
-
-func (m *Mobiauto) fetchOne(ctx context.Context, url string) ([]model.RawListing, error) {
-	page, err := m.fetcher.FetchPage(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-
-	listings, err := ParseMobiauto(strings.NewReader(page))
-	if err != nil {
-		return listings, fmt.Errorf("parsing %s: %w", url, err)
-	}
-	return listings, nil
+	return fetchPages(ctx, m.fetcher, m.baseURLs, m.delay, ParseMobiauto)
 }
 
 type mobiautoPayload struct {

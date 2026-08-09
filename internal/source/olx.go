@@ -35,39 +35,7 @@ func NewOLX(fetcher PageFetcher, baseURLs []string) *OLX {
 func (o *OLX) Name() string { return model.SourceOLX }
 
 func (o *OLX) Fetch(ctx context.Context) ([]model.RawListing, error) {
-	var all []model.RawListing
-	for i, url := range o.baseURLs {
-		if err := ctx.Err(); err != nil {
-			return all, err
-		}
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return all, ctx.Err()
-			case <-time.After(o.delay):
-			}
-		}
-
-		listings, err := o.fetchOne(ctx, url)
-		if err != nil {
-			return all, err
-		}
-		all = append(all, listings...)
-	}
-	return all, nil
-}
-
-func (o *OLX) fetchOne(ctx context.Context, url string) ([]model.RawListing, error) {
-	page, err := o.fetcher.FetchPage(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-
-	listings, err := ParseOLX(strings.NewReader(page))
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", url, err)
-	}
-	return listings, nil
+	return fetchPages(ctx, o.fetcher, o.baseURLs, o.delay, ParseOLX)
 }
 
 type olxAd struct {
