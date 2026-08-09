@@ -26,7 +26,7 @@ func ParsePrice(s string) (int64, bool) {
 
 	best := int64(0)
 	for _, loc := range priceWithSymbol.FindAllStringSubmatchIndex(s, -1) {
-		if precededByNonPriceContext(s, loc[0]) {
+		if precededByCeilingMarker(s, loc[0]) {
 			continue
 		}
 		value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64)
@@ -63,16 +63,16 @@ func ParsePrice(s string) (int64, bool) {
 	return 0, false
 }
 
-var nonPriceContext = []string{"troc", "permut", "avali", "ate ", "até "}
+var ceilingMarkers = []string{"ate", "até"}
 
-func precededByNonPriceContext(s string, at int) bool {
-	start := at - 24
+func precededByCeilingMarker(s string, at int) bool {
+	start := at - 8
 	if start < 0 {
 		start = 0
 	}
-	window := strings.ToLower(s[start:at])
-	for _, word := range nonPriceContext {
-		if strings.Contains(window, word) {
+	window := strings.TrimRight(strings.ToLower(s[start:at]), " ")
+	for _, marker := range ceilingMarkers {
+		if strings.HasSuffix(window, marker) {
 			return true
 		}
 	}
