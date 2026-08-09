@@ -968,6 +968,9 @@ func TestParseLocation(t *testing.T) {
 		{"Rio de Janeiro, Copacabana", "rio de janeiro", ""},
 		{"São Paulo, Moema", "sao paulo", ""},
 		{"Vila Mariana, São Paulo", "vila mariana", "SP"},
+		{"Campinas - São Paulo - Brasil", "campinas", "SP"},
+		{"Volta Redonda - Rio de Janeiro - Brasil", "volta redonda", "RJ"},
+		{"Santos, São Paulo (Zona Leste)", "santos", "SP"},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -1185,13 +1188,12 @@ func splitSegments(folded string) []string {
 }
 
 func findState(segments []string) (string, int) {
-	last := len(segments) - 1
-	for i := last; i >= 0; i-- {
+	for i := len(segments) - 1; i >= 0; i-- {
 		seg := segments[i]
 		if len(seg) == 2 && isBrazilianState(strings.ToUpper(seg)) {
 			return strings.ToUpper(seg), i
 		}
-		if i == last {
+		if i > 0 || len(segments) == 1 {
 			if uf, ok := stateNames[seg]; ok {
 				return uf, i
 			}
@@ -1258,12 +1260,19 @@ metropolitano. O `stateIndex` existe só para isso. Quando o estado é o único
 segmento, como em `"Rio de Janeiro"` sem UF, o fallback final o reaproveita como
 cidade, que é o comportamento correto para a capital.
 
-A terceira: um nome de estado por extenso só conta como estado no último
-segmento. `"Rio de Janeiro"` e `"São Paulo"` são simultaneamente cidade e
-estado, então em `"Rio de Janeiro, Copacabana"` — cidade primeiro, bairro
-depois — o nome seria lido como estado, a cidade viraria `copacabana` e um
-anúncio na capital cairia para Talvez. Restringir a forma por extenso ao último
-segmento resolve, e siglas de duas letras continuam aceitas em qualquer posição.
+A terceira: um nome de estado por extenso só conta como estado quando NÃO é o
+primeiro segmento, ou quando é o único. `"Rio de Janeiro"` e `"São Paulo"` são
+simultaneamente cidade e estado, e o que os desambigua é a posição: em
+`"Rio de Janeiro, Copacabana"` a capital vem primeiro e é cidade; em
+`"Cabo Frio, Rio de Janeiro"` vem depois e é estado. Siglas de duas letras
+continuam aceitas em qualquer posição.
+
+O gate é por posição inicial e não por posição final porque o sufixo depois do
+estado é comum: `"Campinas - São Paulo - Brasil"` e
+`"Santos, São Paulo (Zona Leste)"` têm o estado no meio. Exigir que fosse o
+último segmento faria o estado passar despercebido, o segmento órfão `sao paulo`
+casaria a tabela de cidades com estado vazio, e uma moto em Campinas viraria
+Match na capital. A cláusula `len(segments) == 1` preserva a capital sozinha.
 
 A segunda: a UF colada por hífen ou espaço simples, `"Curitiba-PR"` e
 `"Curitiba PR"`, não é separada pela segmentação, porque o hífen só separa com
