@@ -2,6 +2,18 @@ database_path: hunter.db
 sources:
   - olx
   - mercadolivre
+devtools_url: http://127.0.0.1:9222
+source_urls:
+  olx:
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20road%20glide
+  mercadolivre:
+    - https://lista.mercadolivre.com.br/harley-davidson-street-glide
+    - https://lista.mercadolivre.com.br/harley-davidson-road-glide
 match:
   years: [2014, 2015]
   maybe_years: [2013, 2016]

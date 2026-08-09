@@ -35,3 +35,25 @@ func TestLoadRejectsEmptyMatchCriteria(t *testing.T) {
 		t.Fatal("Load should reject a config with no match criteria")
 	}
 }
+
+func TestLoadReadsSourceURLsAndDevtoolsURL(t *testing.T) {
+	cfg, err := Load("testdata/config.yaml")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.DevtoolsURL != "http://127.0.0.1:9222" {
+		t.Errorf("DevtoolsURL = %q, want %q", cfg.DevtoolsURL, "http://127.0.0.1:9222")
+	}
+	if len(cfg.SourceURLs["olx"]) != 2 {
+		t.Errorf("SourceURLs[olx] = %v, want 2 urls", cfg.SourceURLs["olx"])
+	}
+	if len(cfg.SourceURLs["mercadolivre"]) != 1 {
+		t.Errorf("SourceURLs[mercadolivre] = %v, want 1 url", cfg.SourceURLs["mercadolivre"])
+	}
+}
+
+func TestLoadRejectsEnabledSourceWithoutURLs(t *testing.T) {
+	if _, err := Load("testdata/no-urls.yaml"); err == nil {
+		t.Fatal("Load should reject an enabled source that has no urls: it would crawl nothing and report success")
+	}
+}

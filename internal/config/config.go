@@ -7,6 +7,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+const defaultDevtoolsURL = "http://127.0.0.1:9222"
+
 type MatchCriteria struct {
 	Years              []int `yaml:"years"`
 	MaybeYears         []int `yaml:"maybe_years"`
@@ -21,10 +23,12 @@ type CrawlSettings struct {
 }
 
 type Config struct {
-	DatabasePath string        `yaml:"database_path"`
-	Sources      []string      `yaml:"sources"`
-	Match        MatchCriteria `yaml:"match"`
-	Crawl        CrawlSettings `yaml:"crawl"`
+	DatabasePath string              `yaml:"database_path"`
+	Sources      []string            `yaml:"sources"`
+	SourceURLs   map[string][]string `yaml:"source_urls"`
+	DevtoolsURL  string              `yaml:"devtools_url"`
+	Match        MatchCriteria       `yaml:"match"`
+	Crawl        CrawlSettings       `yaml:"crawl"`
 }
 
 func Load(path string) (Config, error) {
@@ -44,6 +48,14 @@ func Load(path string) (Config, error) {
 	}
 	if cfg.Match.MaxPriceCents <= 0 {
 		return Config{}, fmt.Errorf("config has no max price")
+	}
+	for _, name := range cfg.Sources {
+		if len(cfg.SourceURLs[name]) == 0 {
+			return Config{}, fmt.Errorf("source %q is enabled but has no urls under source_urls", name)
+		}
+	}
+	if cfg.DevtoolsURL == "" {
+		cfg.DevtoolsURL = defaultDevtoolsURL
 	}
 	return cfg, nil
 }
