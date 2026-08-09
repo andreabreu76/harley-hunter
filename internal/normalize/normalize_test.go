@@ -135,6 +135,41 @@ func TestNormalizeReadsPriceAfterMileage(t *testing.T) {
 	}
 }
 
+func TestNormalizeFindsCityWrittenWithAttachedState(t *testing.T) {
+	cases := []struct {
+		text string
+		city string
+	}{
+		{"Street Glide 2015, moto em Curitiba-PR, aceito troca", "curitiba"},
+		{"Road Glide 2015 (Guarulhos-SP) impecavel", "guarulhos"},
+		{"Street Glide 2014, Embu-Guacu SP", "embu guacu"},
+	}
+	for _, c := range cases {
+		t.Run(c.city, func(t *testing.T) {
+			l := Normalize(model.RawListing{Source: "instagram", ExternalID: c.city, RawText: c.text})
+			if l.City != c.city {
+				t.Errorf("City = %q, want %q", l.City, c.city)
+			}
+		})
+	}
+}
+
+func TestNormalizeIgnoresMoreFiscalYearShapes(t *testing.T) {
+	cases := []string{
+		"IPVA/2026 pago. Street Glide 2015, Curitiba - PR",
+		"Documento 2026 ok. Road Glide 2015, Curitiba - PR",
+		"Emplacada 2026. Street Glide 2015, Curitiba - PR",
+	}
+	for _, text := range cases {
+		t.Run(text[:12], func(t *testing.T) {
+			l := Normalize(model.RawListing{Source: "instagram", ExternalID: text[:8], RawText: text})
+			if l.Year == nil || *l.Year != 2015 {
+				t.Errorf("Year = %v, want 2015", l.Year)
+			}
+		})
+	}
+}
+
 func TestFingerprintIsStableAndDiscriminating(t *testing.T) {
 	year := 2015
 	km := 31200

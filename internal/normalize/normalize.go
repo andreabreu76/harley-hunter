@@ -12,7 +12,7 @@ import (
 
 const mileageBucketSize = 5000
 
-var fiscalYear = regexp.MustCompile(`(?i)\b(ipva|licenciamento|crlv|seguro|financiamento)\s*(?:de\s*)?(19|20)\d{2}`)
+var fiscalYear = regexp.MustCompile(`(?i)\b(ipva|licenciad\w*|licenciamento|crlv|seguro|financiamento|documento|documentacao|emplacad\w*)\s*(?:/|de)?\s*(19|20)\d{2}`)
 
 func Normalize(raw model.RawListing) model.Listing {
 	full := strings.TrimSpace(raw.Title + " " + raw.RawText)
@@ -56,7 +56,7 @@ func Normalize(raw model.RawListing) model.Listing {
 }
 
 func locationFromText(text string) (string, string) {
-	folded := Fold(text)
+	folded := cityKey(Fold(text))
 	bestCity, bestState, bestIndex := "", "", 0
 	for city, state := range metroCities {
 		index := wordIndex(folded, city)
@@ -91,7 +91,7 @@ func wordChar(text string, i int) bool {
 		return false
 	}
 	c := text[i]
-	return c == '-' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+	return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
 }
 
 func Fingerprint(l model.Listing) string {
