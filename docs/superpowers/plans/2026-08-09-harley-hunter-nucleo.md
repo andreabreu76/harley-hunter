@@ -465,6 +465,9 @@ func TestParsePrice(t *testing.T) {
 		{"Entrada 20 mil, moto 74 mil", 7400000, true},
 		{"Sinal de R$ 15.000, restante 74 mil", 7400000, true},
 		{"Entrada 20 mil, Street Glide R$ 74.900", 7490000, true},
+		{"R$ 74.900, troco por ate 90 mil", 7490000, true},
+		{"Aceito troca ate 90 mil, moto R$ 74.900", 7490000, true},
+		{"Moto 74 mil, troco por ate 90 mil", 7400000, true},
 		{"12 mil kms", 0, false},
 		{"42 mil kms rodados", 0, false},
 		{"12 mil quilometros", 0, false},
@@ -500,9 +503,13 @@ nunca chega no preço. `"Entrada 20 mil, moto 74 mil"` é o espelho, sem nenhum
 `R$` no texto, e um ramo de milhares que pare no primeiro sobrevivente devolve
 20 mil. Ambos fabricam preço baixo, que passa sob o teto e vira alerta falso.
 
-Cada coletor mantém o filtro que lhe cabe: valores de `R$` governados por um
-`até` colado são descartados, e valores em milhares seguidos de palavra
-não-monetária também. O número puro só é considerado quando nada mais foi
+Os dois coletores aplicam os MESMOS filtros, e a simetria importa. O teto de
+troca aparece nas duas notações — `"troco por até R$ 90.000"` e
+`"troco por até 90 mil"` — e o Instagram prefere a segunda. Guardar só o
+coletor de `R$` deixava o teto em milhares entrar no conjunto e, por ser o maior
+valor, vencer a comparação. Cada coletor descarta tanto o que vem depois de um
+`até` colado quanto, no caso dos milhares, o que é seguido de palavra
+não-monetária. O número puro só é considerado quando nada mais foi
 encontrado, porque só faz sentido quando a string inteira é o campo de preço.
 
 Valores precedidos IMEDIATAMENTE por `até` são descartados antes da comparação.
@@ -679,11 +686,11 @@ func ParsePrice(s string) (int64, bool) {
 		}
 	}
 
-	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
-		if isNonPriceWord(m[2]) {
+	for _, loc := range thousandsSuffix.FindAllStringSubmatchIndex(s, -1) {
+		if precededByCeilingMarker(s, loc[0]) || isNonPriceWord(s[loc[4]:loc[5]]) {
 			continue
 		}
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
+		if value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64); err == nil {
 			consider(int64(value*1000*100 + 0.5))
 		}
 	}
