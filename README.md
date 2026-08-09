@@ -7,7 +7,7 @@ no navegador.
 
 ## Pré-requisitos
 
-- Go 1.24+
+- Go 1.26+
 - Google Chrome instalado (a coleta lê as páginas por CDP; as duas fontes bloqueiam HTTP puro)
 - `terminal-notifier` (`brew install terminal-notifier`), necessário para o clique no banner abrir o anúncio
 
