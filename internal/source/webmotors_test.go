@@ -1,11 +1,14 @@
 package source
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
@@ -163,6 +166,81 @@ func TestParseWebmotorsReturnsErrorWhenNoResultYieldsAListing(t *testing.T) {
 	if _, err := ParseWebmotors(page); err == nil {
 		t.Fatal("ParseWebmotors should return an error when the results array is populated but no result can be read")
 	}
+}
+
+func TestParseWebmotorsAcceptsTheOnlyPageOfTheFixture(t *testing.T) {
+	f, err := os.Open("testdata/webmotors-search.html")
+	if err != nil {
+		t.Fatalf("opening fixture: %v", err)
+	}
+	defer f.Close()
+
+	if _, err := ParseWebmotors(f); err != nil {
+		t.Fatalf("a single page search is not an overflow: %v", err)
+	}
+}
+
+func TestParseWebmotorsReportsASearchThatSpansMorePages(t *testing.T) {
+	listings, err := ParseWebmotors(webmotorsFixtureWithPageTotal(t, 3))
+	if err == nil {
+		t.Fatal("ParseWebmotors should report a search that does not fit in one page")
+	}
+	if got, want := len(listings), 42; got != want {
+		t.Fatalf("len(listings) = %d, want %d: the page that was read is worth keeping", got, want)
+	}
+	for _, want := range []string{"3 pages", "42"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q", err, want)
+		}
+	}
+}
+
+func TestParseWebmotorsDoesNotReportOverflowOnAnEmptySearch(t *testing.T) {
+	f, err := os.Open("testdata/webmotors-search-empty.html")
+	if err != nil {
+		t.Fatalf("opening fixture: %v", err)
+	}
+	defer f.Close()
+
+	if _, err := ParseWebmotors(f); err != nil {
+		t.Fatalf("an empty search reports zero pages, not an overflow: %v", err)
+	}
+}
+
+func TestWebmotorsFetchKeepsThePageItReadWhenTheSearchOverflows(t *testing.T) {
+	page, err := io.ReadAll(webmotorsFixtureWithPageTotal(t, 2))
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+
+	fetcher := &fakePageFetcher{page: string(page)}
+	w := NewWebmotors(fetcher, []string{"https://webmotors.test/street"})
+	w.delay = 0
+
+	listings, err := w.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("Fetch should report the overflow")
+	}
+	if got, want := len(listings), 42; got != want {
+		t.Fatalf("len(listings) = %d, want %d: the overflowing page is still worth keeping", got, want)
+	}
+	if !strings.Contains(err.Error(), "https://webmotors.test/street") {
+		t.Errorf("error %q does not name the url that overflowed", err)
+	}
+}
+
+func webmotorsFixtureWithPageTotal(t *testing.T, total int) io.Reader {
+	t.Helper()
+	page, err := os.ReadFile("testdata/webmotors-search.html")
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+	const single = `"PageTotal":1`
+	if !bytes.Contains(page, []byte(single)) {
+		t.Fatalf("fixture no longer carries %s", single)
+	}
+	doctored := bytes.Replace(page, []byte(single), fmt.Appendf(nil, `"PageTotal":%d`, total), 1)
+	return bytes.NewReader(doctored)
 }
 
 func TestParseWebmotorsAcceptsRawJSON(t *testing.T) {

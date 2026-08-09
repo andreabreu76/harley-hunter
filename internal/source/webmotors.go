@@ -58,10 +58,10 @@ func (w *Webmotors) Fetch(ctx context.Context) ([]model.RawListing, error) {
 		}
 
 		listings, err := w.fetchOne(ctx, url)
+		all = append(all, listings...)
 		if err != nil {
 			return all, err
 		}
-		all = append(all, listings...)
 	}
 	return all, nil
 }
@@ -74,13 +74,18 @@ func (w *Webmotors) fetchOne(ctx context.Context, url string) ([]model.RawListin
 
 	listings, err := ParseWebmotors(strings.NewReader(page))
 	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", url, err)
+		return listings, fmt.Errorf("parsing %s: %w", url, err)
 	}
 	return listings, nil
 }
 
 type webmotorsResponse struct {
 	SearchResults *[]webmotorsResult `json:"SearchResults"`
+	Count         int                `json:"Count"`
+	Pagination    struct {
+		PageCurrent int `json:"PageCurrent"`
+		PageTotal   int `json:"PageTotal"`
+	} `json:"Pagination"`
 }
 
 type webmotorsResult struct {
@@ -147,6 +152,10 @@ func ParseWebmotors(body io.Reader) ([]model.RawListing, error) {
 
 	if len(results) > 0 && len(listings) == 0 {
 		return nil, fmt.Errorf("webmotors read %d results and no listing: result payload changed", len(results))
+	}
+	if total := response.Pagination.PageTotal; total > 1 {
+		return listings, fmt.Errorf("webmotors search spans %d pages and only page %d is read: %d of %d results collected",
+			total, max(response.Pagination.PageCurrent, 1), len(listings), response.Count)
 	}
 	return listings, nil
 }
