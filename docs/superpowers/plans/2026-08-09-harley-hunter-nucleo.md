@@ -1477,6 +1477,41 @@ func TestNormalizeReadsPriceAfterMileage(t *testing.T) {
 	}
 }
 
+func TestNormalizeFindsCityWrittenWithAttachedState(t *testing.T) {
+	cases := []struct {
+		text string
+		city string
+	}{
+		{"Street Glide 2015, moto em Curitiba-PR, aceito troca", "curitiba"},
+		{"Road Glide 2015 (Guarulhos-SP) impecavel", "guarulhos"},
+		{"Street Glide 2014, Embu-Guacu SP", "embu guacu"},
+	}
+	for _, c := range cases {
+		t.Run(c.city, func(t *testing.T) {
+			l := Normalize(model.RawListing{Source: "instagram", ExternalID: c.city, RawText: c.text})
+			if l.City != c.city {
+				t.Errorf("City = %q, want %q", l.City, c.city)
+			}
+		})
+	}
+}
+
+func TestNormalizeIgnoresMoreFiscalYearShapes(t *testing.T) {
+	cases := []string{
+		"IPVA/2026 pago. Street Glide 2015, Curitiba - PR",
+		"Documento 2026 ok. Road Glide 2015, Curitiba - PR",
+		"Emplacada 2026. Street Glide 2015, Curitiba - PR",
+	}
+	for _, text := range cases {
+		t.Run(text[:12], func(t *testing.T) {
+			l := Normalize(model.RawListing{Source: "instagram", ExternalID: text[:8], RawText: text})
+			if l.Year == nil || *l.Year != 2015 {
+				t.Errorf("Year = %v, want 2015", l.Year)
+			}
+		})
+	}
+}
+
 func TestFingerprintIsStableAndDiscriminating(t *testing.T) {
 	year := 2015
 	km := 31200
@@ -1523,7 +1558,7 @@ import (
 
 const mileageBucketSize = 5000
 
-var fiscalYear = regexp.MustCompile(`(?i)\b(ipva|licenciamento|crlv|seguro|financiamento)\s*(?:de\s*)?(19|20)\d{2}`)
+var fiscalYear = regexp.MustCompile(`(?i)\b(ipva|licenciad\w*|licenciamento|crlv|seguro|financiamento|documento|documentacao|emplacad\w*)\s*(?:/|de)?\s*(19|20)\d{2}`)
 
 func Normalize(raw model.RawListing) model.Listing {
 	full := strings.TrimSpace(raw.Title + " " + raw.RawText)
@@ -1567,7 +1602,7 @@ func Normalize(raw model.RawListing) model.Listing {
 }
 
 func locationFromText(text string) (string, string) {
-	folded := Fold(text)
+	folded := cityKey(Fold(text))
 	bestCity, bestState, bestIndex := "", "", 0
 	for city, state := range metroCities {
 		index := wordIndex(folded, city)
@@ -1602,7 +1637,7 @@ func wordChar(text string, i int) bool {
 		return false
 	}
 	c := text[i]
-	return c == '-' || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
+	return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9')
 }
 
 func Fingerprint(l model.Listing) string {
@@ -1628,6 +1663,12 @@ que ela existe para fazer. A tabela colide consigo mesma (`pinhais` é sufixo de
 `sao jose dos pinhais`), então a colisão não é hipotética. O critério de escolha
 é determinístico: vence o nome mais longo e, em empate de tamanho, o de menor
 posição no texto.
+
+O texto passa por `cityKey` antes da busca, convertendo hífen em espaço. Isso
+resolve dois casos de uma vez: `"Curitiba-PR"` escrito no corpo do anúncio passa
+a encontrar `curitiba`, e `"Embu-Guaçu"` encontra a entrada da tabela, que é
+grafada com espaço desde a Task 5. Sem essa normalização o caminho de texto
+livre rejeitaria exatamente a forma que o caminho estruturado aceita.
 
 A busca é por palavra inteira, não por substring. `mage` aparece dentro de
 `imagens`, e "mais imagens no WhatsApp" é frase corriqueira em anúncio — sem o
