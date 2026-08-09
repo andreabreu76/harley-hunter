@@ -28,6 +28,7 @@
 |---|---|
 | `cmd/hunter/main.go` | despacho dos subcomandos `crawl` e `serve` |
 | `internal/model/listing.go` | tipos compartilhados `RawListing`, `Listing`, `Verdict` |
+| `internal/format/format.go` | separação de milhares, usada pelo SMS e pelo dashboard |
 | `internal/config/config.go` | carregamento do `config.yaml` |
 | `internal/normalize/price.go` | texto de preço para centavos |
 | `internal/normalize/year.go` | texto de ano para inteiro |
@@ -2071,6 +2072,7 @@ git commit -m "feat: sqlite persistence with deduplication and price history"
 - Consumes: `model.RawListing` da Task 2
 - Produces:
   - `source.Source` interface com `Name() string` e `Fetch(ctx context.Context) ([]model.RawListing, error)`
+  - `source.defaultUserAgent`, a string de User-Agent que todas as fontes HTTP usam
   - `source.NewOLX(client *http.Client, baseURLs []string) *source.OLX`
   - `source.ParseOLX(body io.Reader) ([]model.RawListing, error)` — exportada para permitir teste sem rede
 
@@ -2174,6 +2176,8 @@ import (
 	"github.com/andreabreu76/harley-hunter/internal/model"
 )
 
+const defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
+
 type Source interface {
 	Name() string
 	Fetch(ctx context.Context) ([]model.RawListing, error)
@@ -2204,8 +2208,6 @@ import (
 	"github.com/andreabreu76/harley-hunter/internal/model"
 )
 
-const olxUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
-
 type OLX struct {
 	client   *http.Client
 	baseURLs []string
@@ -2227,7 +2229,7 @@ func (o *OLX) Fetch(ctx context.Context) ([]model.RawListing, error) {
 		if err != nil {
 			return nil, fmt.Errorf("building request for %s: %w", url, err)
 		}
-		req.Header.Set("User-Agent", olxUserAgent)
+		req.Header.Set("User-Agent", defaultUserAgent)
 		req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
 
 		resp, err := o.client.Do(req)
@@ -2372,7 +2374,7 @@ git commit -m "feat: olx source with fixture-based parser tests"
 - Test: `internal/source/mercadolivre_test.go`, `internal/source/testdata/mercadolivre-search.html`
 
 **Interfaces:**
-- Consumes: `source.Source` da Task 9
+- Consumes: `source.Source` e `source.defaultUserAgent` da Task 9
 - Produces: `source.NewMercadoLivre(client *http.Client, baseURLs []string) *source.MercadoLivre` e `source.ParseMercadoLivre(body io.Reader) ([]model.RawListing, error)`
 
 - [ ] **Step 1: Capturar a fixture real**
@@ -2476,7 +2478,7 @@ func (m *MercadoLivre) Fetch(ctx context.Context) ([]model.RawListing, error) {
 		if err != nil {
 			return nil, fmt.Errorf("building request for %s: %w", url, err)
 		}
-		req.Header.Set("User-Agent", olxUserAgent)
+		req.Header.Set("User-Agent", defaultUserAgent)
 		req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
 
 		resp, err := m.client.Do(req)
@@ -2959,9 +2961,9 @@ git commit -m "feat: crawl orchestration with per-source isolation and health tr
 ### Task 12: Notificação por SMS
 
 **Files:**
-- Create: `internal/notify/notify.go`, `internal/notify/twilio.go`
+- Create: `internal/format/format.go`, `internal/notify/notify.go`, `internal/notify/twilio.go`
 - Modify: `internal/crawl/crawl.go`, `cmd/hunter/main.go`
-- Test: `internal/notify/twilio_test.go`, `internal/crawl/notify_test.go`
+- Test: `internal/format/format_test.go`, `internal/notify/twilio_test.go`, `internal/crawl/notify_test.go`
 
 **Interfaces:**
 - Consumes: `store.Row` (Task 8), `crawl.Report` (Task 11)
@@ -2969,7 +2971,65 @@ git commit -m "feat: crawl orchestration with per-source isolation and health tr
   - `notify.Notifier` interface com `Send(ctx context.Context, message string) error`
   - `notify.NewTwilioFromEnv() (*notify.Twilio, error)` lendo `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (com `TWILIO_FROM` como alternativa) e `ALERT_TO`
   - `notify.FormatAlert(r store.Row) string`
+  - `format.Thousands(value int64) string`, consumida pela Task 13
   - `crawl.Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (sent int, err error)`
+
+- [ ] **Step 0: Criar o pacote de formatação compartilhado**
+
+Separação de milhares é usada pelo SMS e pelo dashboard. Ela nasce em um pacote
+próprio para não existir em duas cópias.
+
+`internal/format/format_test.go`:
+
+```go
+package format
+
+import "testing"
+
+func TestThousands(t *testing.T) {
+	cases := []struct {
+		in   int64
+		want string
+	}{
+		{0, "0"},
+		{999, "999"},
+		{1000, "1.000"},
+		{72000, "72.000"},
+		{4000, "4.000"},
+		{1234567, "1.234.567"},
+	}
+	for _, c := range cases {
+		if got := Thousands(c.in); got != c.want {
+			t.Errorf("Thousands(%d) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+```
+
+`internal/format/format.go`:
+
+```go
+package format
+
+import (
+	"strconv"
+	"strings"
+)
+
+func Thousands(value int64) string {
+	digits := strconv.FormatInt(value, 10)
+	var parts []string
+	for len(digits) > 3 {
+		parts = append([]string{digits[len(digits)-3:]}, parts...)
+		digits = digits[:len(digits)-3]
+	}
+	parts = append([]string{digits}, parts...)
+	return strings.Join(parts, ".")
+}
+```
+
+Run: `go test ./internal/format/ -v`
+Expected: PASS
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -3182,6 +3242,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/andreabreu76/harley-hunter/internal/format"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
 
@@ -3259,7 +3320,7 @@ func (t *Twilio) Send(ctx context.Context, message string) error {
 func FormatAlert(r store.Row) string {
 	price := "preço não informado"
 	if r.PriceCents != nil {
-		price = "R$ " + formatThousands(*r.PriceCents/100)
+		price = "R$ " + format.Thousands(*r.PriceCents/100)
 	}
 	year := ""
 	if r.Year != nil {
@@ -3271,17 +3332,6 @@ func FormatAlert(r store.Row) string {
 	}
 	return fmt.Sprintf("%s%s — %s — %s [%s] %s",
 		strings.TrimSpace(r.Title), year, price, location, r.Source, r.URL)
-}
-
-func formatThousands(value int64) string {
-	digits := fmt.Sprint(value)
-	var parts []string
-	for len(digits) > 3 {
-		parts = append([]string{digits[len(digits)-3:]}, parts...)
-		digits = digits[:len(digits)-3]
-	}
-	parts = append([]string{digits}, parts...)
-	return strings.Join(parts, ".")
 }
 ```
 
@@ -3356,7 +3406,7 @@ As credenciais já existem em `.env` na raiz do projeto, que o `.gitignore` cobr
 - [ ] **Step 8: Commit**
 
 ```bash
-git add internal/notify internal/crawl cmd/hunter
+git add internal/format internal/notify internal/crawl cmd/hunter
 git commit -m "feat: sms alerts with per-run cap and retry on delivery failure"
 ```
 
@@ -3370,7 +3420,7 @@ git commit -m "feat: sms alerts with per-run cap and retry on delivery failure"
 - Test: `internal/web/server_test.go`
 
 **Interfaces:**
-- Consumes: `store.Store`, `store.Row`, `store.PricePoint` (Task 8); `crawl.HealthStatus` (Task 11)
+- Consumes: `store.Store`, `store.Row`, `store.PricePoint` (Task 8); `crawl.HealthStatus` (Task 11); `format.Thousands` (Task 12)
 - Produces: `web.NewServer(s *store.Store, sources []string) http.Handler`
 
 - [ ] **Step 1: Escrever o teste que falha**
@@ -3639,6 +3689,7 @@ import (
 	"strings"
 
 	"github.com/andreabreu76/harley-hunter/internal/crawl"
+	"github.com/andreabreu76/harley-hunter/internal/format"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
@@ -3662,8 +3713,8 @@ type sourceHealth struct {
 
 func NewServer(s *store.Store, sources []string) http.Handler {
 	funcs := template.FuncMap{
-		"money":      func(cents *int64) string { return formatThousands(*cents / 100) },
-		"moneyCents": func(cents int64) string { return formatThousands(cents / 100) },
+		"money":      func(cents *int64) string { return format.Thousands(*cents / 100) },
+		"moneyCents": func(cents int64) string { return format.Thousands(cents / 100) },
 		"priceDrop":  priceDrop,
 	}
 
@@ -3769,18 +3820,7 @@ func priceDrop(r store.Row) string {
 	if diff <= 0 {
 		return ""
 	}
-	return fmt.Sprintf(" (baixou R$ %s)", formatThousands(diff/100))
-}
-
-func formatThousands(value int64) string {
-	digits := strconv.FormatInt(value, 10)
-	var parts []string
-	for len(digits) > 3 {
-		parts = append([]string{digits[len(digits)-3:]}, parts...)
-		digits = digits[:len(digits)-3]
-	}
-	parts = append([]string{digits}, parts...)
-	return strings.Join(parts, ".")
+	return fmt.Sprintf(" (baixou R$ %s)", format.Thousands(diff/100))
 }
 ```
 
