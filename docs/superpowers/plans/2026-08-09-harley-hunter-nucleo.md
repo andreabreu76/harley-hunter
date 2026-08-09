@@ -1503,9 +1503,10 @@ func TestNormalizeIgnoresMoreFiscalYearShapes(t *testing.T) {
 		"Emplacada 2026. Street Glide 2015, Curitiba - PR",
 		"Documentação 2026 em dia. Street Glide 2015, Curitiba - PR",
 		"Documentos 2026 ok. Road Glide 2015, Curitiba - PR",
+		"IPVA 2026 PAGO. VENDO STREET GLIDE 2015, CURITIBA-PR",
 	}
 	for _, text := range cases {
-		t.Run(text[:12], func(t *testing.T) {
+		t.Run(string([]rune(text)[:12]), func(t *testing.T) {
 			l := Normalize(model.RawListing{Source: "instagram", ExternalID: text[:8], RawText: text})
 			if l.Year == nil || *l.Year != 2015 {
 				t.Errorf("Year = %v, want 2015", l.Year)
@@ -1679,7 +1680,11 @@ de nome mais longo resolve o outro caso: em "moto na Lapa, São Paulo capital",
 `sao paulo` vence `lapa`, evitando que uma moto paulista seja gravada no Paraná.
 
 O texto é normalizado com `Fold` antes de remover os anos fiscais, e o padrão
-usa `document\w*`. Sem o `Fold`, `"Documentação 2026"` escaparia: `\w` em Go é
+usa `document\w*`. As duas coisas dependem uma da outra: o padrão não tem
+`(?i)` justamente porque `Fold` já baixou a caixa, e `IPVA` e `CRLV` aparecem
+quase sempre em maiúsculas no anúncio. Trocar `Fold(full)` de volta por `full`
+faria toda palavra-chave maiúscula deixar de casar — por isso a tabela tem um
+caso inteiramente em caixa alta, que falha se alguém desfizer a dependência. Sem o `Fold`, `"Documentação 2026"` escaparia: `\w` em Go é
 ASCII e para no `ç`, então nenhuma variação do padrão alcança a palavra
 acentuada como ela aparece no anúncio. O `\w*` cobre o plural `"Documentos"`.
 
