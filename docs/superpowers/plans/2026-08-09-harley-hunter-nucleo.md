@@ -444,6 +444,10 @@ func TestParsePrice(t *testing.T) {
 		{"R$ 1,00", 0, false},
 		{"12.000 km", 0, false},
 		{"12 mil km", 0, false},
+		{"12 mil kms", 0, false},
+		{"42 mil kms rodados", 0, false},
+		{"12 mil quilometros", 0, false},
+		{"Vendo Road Glide, 42 mil kms rodados, aceito troca", 0, false},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -462,6 +466,8 @@ func TestParsePrice(t *testing.T) {
 Os casos com `km` são o coração deste teste. `ParsePrice` recebe tanto o campo estruturado de preço quanto, como alternativa, o texto livre inteiro do anúncio — que quase sempre menciona quilometragem. Um filtro que simplesmente recusasse qualquer texto contendo "km" quebraria o caso `"Vendo Street Glide 15/15, 42.000 km, R$ 74.900"`, e um filtro ausente transformaria `"12 mil km"` em R$ 12.000. A implementação resolve isso pela ordem de reconhecimento, não por exclusão.
 
 O caso `"negociável"` também é deliberado: é a palavra mais comum em anúncio de moto e não pode ser confundida com preço indisponível.
+
+O guard de quilometragem reconhece prefixo, não token exato. Anúncio real escreve `"42 mil kms rodados"` e `"12 mil quilômetros"` tanto quanto `"12 mil km"`, e comparar com a string `"km"` deixaria os dois primeiros virarem preço. O prefixo `quil` cobre a forma acentuada porque o grupo `[a-z]*` do regex para no `ô`. Um anúncio sem preço cujo texto diz `"42 mil kms rodados"` viraria R$ 42.000 — dentro do teto, classificado como Match e disparando SMS por uma moto que sequer anunciou preço.
 
 `internal/normalize/year_test.go`:
 
@@ -574,7 +580,7 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	if m := thousandsSuffix.FindStringSubmatch(s); m != nil && !strings.EqualFold(m[2], "km") {
+	if m := thousandsSuffix.FindStringSubmatch(s); m != nil && !isMileageWord(m[2]) {
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
 			return plausible(int64(value*1000*100 + 0.5))
 		}
@@ -593,6 +599,11 @@ func ParsePrice(s string) (int64, bool) {
 	}
 
 	return 0, false
+}
+
+func isMileageWord(s string) bool {
+	s = strings.ToLower(s)
+	return strings.HasPrefix(s, "km") || strings.HasPrefix(s, "quil")
 }
 
 func decimalize(s string) string {
