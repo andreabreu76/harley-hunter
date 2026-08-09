@@ -12,7 +12,7 @@ import (
 
 const mileageBucketSize = 5000
 
-var fiscalYear = regexp.MustCompile(`(?i)\b(ipva|licenciad\w*|licenciamento|crlv|seguro|financiamento|documento|documentacao|emplacad\w*)\s*(?:/|de)?\s*(19|20)\d{2}`)
+var fiscalYear = regexp.MustCompile(`\b(ipva|licenciad\w*|licenciamento|crlv|seguro|financiamento|document\w*|emplacad\w*)\s*(?:/|de)?\s*(19|20)\d{2}`)
 
 func Normalize(raw model.RawListing) model.Listing {
 	full := strings.TrimSpace(raw.Title + " " + raw.RawText)
@@ -36,7 +36,7 @@ func Normalize(raw model.RawListing) model.Listing {
 
 	if year, ok := ParseYear(raw.YearText); ok {
 		l.Year = &year
-	} else if year, ok := ParseYear(fiscalYear.ReplaceAllString(full, " ")); ok {
+	} else if year, ok := ParseYear(fiscalYear.ReplaceAllString(Fold(full), " ")); ok {
 		l.Year = &year
 	}
 

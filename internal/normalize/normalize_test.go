@@ -143,6 +143,7 @@ func TestNormalizeFindsCityWrittenWithAttachedState(t *testing.T) {
 		{"Street Glide 2015, moto em Curitiba-PR, aceito troca", "curitiba"},
 		{"Road Glide 2015 (Guarulhos-SP) impecavel", "guarulhos"},
 		{"Street Glide 2014, Embu-Guacu SP", "embu guacu"},
+		{"Street Glide 2015, entrega em Sao-Jose-dos-Pinhais", "sao jose dos pinhais"},
 	}
 	for _, c := range cases {
 		t.Run(c.city, func(t *testing.T) {
@@ -159,6 +160,8 @@ func TestNormalizeIgnoresMoreFiscalYearShapes(t *testing.T) {
 		"IPVA/2026 pago. Street Glide 2015, Curitiba - PR",
 		"Documento 2026 ok. Road Glide 2015, Curitiba - PR",
 		"Emplacada 2026. Street Glide 2015, Curitiba - PR",
+		"Documentação 2026 em dia. Street Glide 2015, Curitiba - PR",
+		"Documentos 2026 ok. Road Glide 2015, Curitiba - PR",
 	}
 	for _, text := range cases {
 		t.Run(text[:12], func(t *testing.T) {
