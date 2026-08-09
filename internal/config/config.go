@@ -39,5 +39,11 @@ func Load(path string) (Config, error) {
 	if len(cfg.Sources) == 0 {
 		return Config{}, fmt.Errorf("config has no sources enabled")
 	}
+	if len(cfg.Match.Years) == 0 {
+		return Config{}, fmt.Errorf("config has no target years")
+	}
+	if cfg.Match.MaxPriceCents <= 0 {
+		return Config{}, fmt.Errorf("config has no max price")
+	}
 	return cfg, nil
 }

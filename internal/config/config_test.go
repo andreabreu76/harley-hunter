@@ -29,3 +29,9 @@ func TestLoadRejectsMissingFile(t *testing.T) {
 		t.Fatal("Load should return an error for a missing file")
 	}
 }
+
+func TestLoadRejectsEmptyMatchCriteria(t *testing.T) {
+	if _, err := Load("testdata/no-match.yaml"); err == nil {
+		t.Fatal("Load should reject a config with no match criteria")
+	}
+}
