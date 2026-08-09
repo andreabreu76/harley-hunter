@@ -1501,6 +1501,8 @@ func TestNormalizeIgnoresMoreFiscalYearShapes(t *testing.T) {
 		"IPVA/2026 pago. Street Glide 2015, Curitiba - PR",
 		"Documento 2026 ok. Road Glide 2015, Curitiba - PR",
 		"Emplacada 2026. Street Glide 2015, Curitiba - PR",
+		"Documentação 2026 em dia. Street Glide 2015, Curitiba - PR",
+		"Documentos 2026 ok. Road Glide 2015, Curitiba - PR",
 	}
 	for _, text := range cases {
 		t.Run(text[:12], func(t *testing.T) {
@@ -1558,7 +1560,7 @@ import (
 
 const mileageBucketSize = 5000
 
-var fiscalYear = regexp.MustCompile(`(?i)\b(ipva|licenciad\w*|licenciamento|crlv|seguro|financiamento|documento|documentacao|emplacad\w*)\s*(?:/|de)?\s*(19|20)\d{2}`)
+var fiscalYear = regexp.MustCompile(`\b(ipva|licenciad\w*|licenciamento|crlv|seguro|financiamento|document\w*|emplacad\w*)\s*(?:/|de)?\s*(19|20)\d{2}`)
 
 func Normalize(raw model.RawListing) model.Listing {
 	full := strings.TrimSpace(raw.Title + " " + raw.RawText)
@@ -1582,7 +1584,7 @@ func Normalize(raw model.RawListing) model.Listing {
 
 	if year, ok := ParseYear(raw.YearText); ok {
 		l.Year = &year
-	} else if year, ok := ParseYear(fiscalYear.ReplaceAllString(full, " ")); ok {
+	} else if year, ok := ParseYear(fiscalYear.ReplaceAllString(Fold(full), " ")); ok {
 		l.Year = &year
 	}
 
@@ -1675,6 +1677,11 @@ A busca é por palavra inteira, não por substring. `mage` aparece dentro de
 limite de palavra, o anúncio seria gravado como se estivesse em Magé. O critério
 de nome mais longo resolve o outro caso: em "moto na Lapa, São Paulo capital",
 `sao paulo` vence `lapa`, evitando que uma moto paulista seja gravada no Paraná.
+
+O texto é normalizado com `Fold` antes de remover os anos fiscais, e o padrão
+usa `document\w*`. Sem o `Fold`, `"Documentação 2026"` escaparia: `\w` em Go é
+ASCII e para no `ç`, então nenhuma variação do padrão alcança a palavra
+acentuada como ela aparece no anúncio. O `\w*` cobre o plural `"Documentos"`.
 
 Anos fiscais são removidos antes de procurar o ano no texto livre. `"IPVA 2026
 pago. Vendo Road Glide 2015"` devolveria 2026, que o matcher rejeita de imediato
