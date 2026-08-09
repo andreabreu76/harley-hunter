@@ -1,0 +1,12 @@
+{{define "content"}}
+<table>
+  <tr><th>Fonte</th><th>Estado</th><th>Últimas coletas (mais recente primeiro)</th></tr>
+  {{range .Sources}}
+  <tr>
+    <td>{{.Name}}</td>
+    <td{{if eq .Status "suspect"}} class="suspect"{{end}}>{{.Status}}</td>
+    <td>{{if .Counts}}{{.Counts}}{{else}}sem coletas{{end}}</td>
+  </tr>
+  {{end}}
+</table>
+{{end}}

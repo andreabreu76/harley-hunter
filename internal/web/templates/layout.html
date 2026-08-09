@@ -1,0 +1,33 @@
+{{define "layout"}}
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harley Hunter</title>
+<style>
+:root { color-scheme: light dark; }
+body { font-family: -apple-system, system-ui, sans-serif; margin: 0; padding: 1.5rem; max-width: 60rem; }
+nav a { margin-right: 1rem; text-decoration: none; }
+.card { display: flex; gap: 1rem; border: 1px solid #8884; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+.card img { width: 140px; height: 105px; object-fit: cover; border-radius: 4px; }
+.price { font-size: 1.25rem; font-weight: 600; }
+.drop { color: #1a7f37; font-weight: 600; }
+.meta { color: #888; font-size: 0.9rem; }
+.suspect { color: #b42318; font-weight: 600; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; padding: 0.5rem; border-bottom: 1px solid #8884; }
+</style>
+</head>
+<body>
+<nav>
+  <a href="/">Match</a>
+  <a href="/maybe">Talvez</a>
+  <a href="/rejected">Descartados</a>
+  <a href="/health">Saúde</a>
+</nav>
+<h1>{{.Title}}</h1>
+{{template "content" .}}
+</body>
+</html>
+{{end}}

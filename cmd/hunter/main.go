@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/andreabreu76/harley-hunter/internal/notify"
 	"github.com/andreabreu76/harley-hunter/internal/source"
 	"github.com/andreabreu76/harley-hunter/internal/store"
+	"github.com/andreabreu76/harley-hunter/internal/web"
 )
 
 func main() {
@@ -31,7 +33,10 @@ func main() {
 			os.Exit(1)
 		}
 	case "serve":
-		fmt.Println("serve: not implemented yet")
+		if err := runServe(cfg); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	default:
 		fmt.Fprintln(os.Stderr, "usage: hunter [-config path] <crawl|serve>")
 		os.Exit(2)
@@ -58,6 +63,18 @@ func runCrawl(cfg config.Config) error {
 	printReport(cfg, report, time.Since(started))
 	sendAlerts(cfg, db)
 	return nil
+}
+
+func runServe(cfg config.Config) error {
+	db, err := store.Open(cfg.DatabasePath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	addr := "127.0.0.1:8080"
+	fmt.Printf("dashboard: http://%s\n", addr)
+	return http.ListenAndServe(addr, web.NewServer(db, cfg.Sources))
 }
 
 func sendAlerts(cfg config.Config, db *store.Store) {

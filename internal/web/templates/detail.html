@@ -1,0 +1,38 @@
+{{define "content"}}
+<div class="card">
+  {{if .Row.ImageURL}}<img src="{{.Row.ImageURL}}" alt="">{{end}}
+  <div>
+    <div class="price">
+      {{if .Row.PriceCents}}R$ {{money .Row.PriceCents}}{{else}}preço não informado{{end}}
+      {{with priceDrop .Row}}<span class="drop">{{.}}</span>{{end}}
+    </div>
+    <div class="meta">
+      {{if .Row.Year}}{{.Row.Year}} · {{end}}
+      {{if .Row.Km}}{{.Row.Km}} km · {{end}}
+      {{with location .Row}}{{.}} · {{end}}
+      {{.Row.Source}} · {{.Row.UserState}}
+    </div>
+    <p><a href="{{.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio original</a></p>
+    <form method="post" action="/listing/{{.Row.ID}}/state?value=contacted">
+      <button type="submit">marcar como contatado</button>
+    </form>
+    <form method="post" action="/listing/{{.Row.ID}}/state?value=dismissed">
+      <button type="submit">descartar</button>
+    </form>
+  </div>
+</div>
+
+<h2>Histórico de preço</h2>
+{{if not .Points}}<p>Nenhum preço registrado.</p>{{end}}
+{{if .Points}}
+<table>
+  <tr><th>Data</th><th>Preço</th></tr>
+  {{range .Points}}
+  <tr><td>{{datetime .ObservedAt}}</td><td>R$ {{moneyCents .PriceCents}}</td></tr>
+  {{end}}
+</table>
+{{end}}
+
+<h2>Texto do anúncio</h2>
+<p class="meta">{{.Row.Title}}</p>
+{{end}}

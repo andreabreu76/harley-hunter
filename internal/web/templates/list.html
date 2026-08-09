@@ -1,0 +1,22 @@
+{{define "content"}}
+{{if not .Rows}}<p>Nenhum anúncio nesta categoria.</p>{{end}}
+{{range .Rows}}
+<div class="card">
+  {{if .ImageURL}}<img src="{{.ImageURL}}" alt="">{{end}}
+  <div>
+    <a href="/listing/{{.ID}}"><strong>{{.Title}}</strong></a>
+    <div class="price">
+      {{if .PriceCents}}R$ {{money .PriceCents}}{{else}}preço não informado{{end}}
+      {{with priceDrop .}}<span class="drop">{{.}}</span>{{end}}
+    </div>
+    <div class="meta">
+      {{if .Year}}{{.Year}} · {{end}}
+      {{if .Km}}{{.Km}} km · {{end}}
+      {{with location .}}{{.}} · {{end}}
+      {{.Source}} · {{.UserState}}
+    </div>
+    <div class="meta"><a href="{{.URL}}" target="_blank" rel="noreferrer">abrir anúncio</a></div>
+  </div>
+</div>
+{{end}}
+{{end}}
