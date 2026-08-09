@@ -955,6 +955,16 @@ func TestParseLocation(t *testing.T) {
 		{"Embu Guaçu - SP", "embu guacu", "SP"},
 		{"Lapa, São Paulo - SP", "sao paulo", "SP"},
 		{"Curitiba- PR", "curitiba", "PR"},
+		{"Curitiba-PR", "curitiba", "PR"},
+		{"Niterói-RJ", "niteroi", "RJ"},
+		{"Mogi das Cruzes-SP", "mogi das cruzes", "SP"},
+		{"Curitiba PR", "curitiba", "PR"},
+		{"Sao Jose dos Pinhais PR", "sao jose dos pinhais", "PR"},
+		{"Campinas - São Paulo", "campinas", "SP"},
+		{"Volta Redonda - Rio de Janeiro", "volta redonda", "RJ"},
+		{"Cabo Frio, Rio de Janeiro", "cabo frio", "RJ"},
+		{"Rio de Janeiro", "rio de janeiro", "RJ"},
+		{"São Paulo", "sao paulo", "SP"},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -983,6 +993,8 @@ func TestLocationTier(t *testing.T) {
 		{"niteroi", "", "metro"},
 		{"embu guacu", "SP", "metro"},
 		{"lapa", "SP", "state"},
+		{"campinas", "SP", "state"},
+		{"volta redonda", "RJ", "state"},
 	}
 	for _, c := range cases {
 		t.Run(c.city+"/"+c.state, func(t *testing.T) {
@@ -1106,13 +1118,22 @@ import (
 	"strings"
 )
 
-var segmentSplit = regexp.MustCompile(`[,/()]+|\s+-\s*|\s*-\s+`)
+var (
+	segmentSplit  = regexp.MustCompile(`[,/()]+|\s+-\s*|\s*-\s+`)
+	trailingState = regexp.MustCompile(`(?i)[\s\-]([a-z]{2})\s*$`)
+)
 
 func ParseLocation(s string) (string, string) {
 	if strings.TrimSpace(s) == "" {
 		return "", ""
 	}
-	segments := splitSegments(Fold(s))
+
+	folded := Fold(s)
+	if m := trailingState.FindStringSubmatch(folded); m != nil && isBrazilianState(strings.ToUpper(m[1])) {
+		folded = folded[:len(folded)-len(m[0])] + ", " + m[1]
+	}
+
+	segments := splitSegments(folded)
 	if len(segments) == 0 {
 		return "", ""
 	}
@@ -1120,7 +1141,10 @@ func ParseLocation(s string) (string, string) {
 	state, stateIndex := findState(segments)
 
 	fallback := ""
-	for _, seg := range segments {
+	for i, seg := range segments {
+		if i == stateIndex {
+			continue
+		}
 		metroState, ok := metroCities[cityKey(seg)]
 		if !ok {
 			continue
@@ -1141,13 +1165,16 @@ func ParseLocation(s string) (string, string) {
 			return seg, state
 		}
 	}
+	if stateIndex >= 0 {
+		return cityKey(segments[stateIndex]), state
+	}
 	return "", state
 }
 
 func splitSegments(folded string) []string {
 	var out []string
 	for _, seg := range segmentSplit.Split(folded, -1) {
-		if seg = strings.TrimSpace(seg); seg != "" {
+		if seg = strings.Trim(seg, " -"); seg != "" {
 			out = append(out, seg)
 		}
 	}
@@ -1213,6 +1240,22 @@ Quando mais de um segmento bate a tabela — `"Lapa, São Paulo - SP"`, em que L
 é município do Paraná e bairro de São Paulo — vence o segmento cuja UF na tabela
 coincide com o estado detectado. Sem esse desempate a cidade sairia como `lapa`
 com estado `SP`, combinação que não é metro e rebaixaria o anúncio.
+
+Duas armadilhas desta função foram descobertas testando-a contra formatos reais
+e cada uma tem um teste dedicado.
+
+A primeira: o segmento que forneceu o estado precisa ser excluído da busca por
+cidade. `"Campinas - São Paulo"` tem `sao paulo` como estado por extenso, e essa
+mesma string existe na tabela de cidades — sem a exclusão ela vence o desempate,
+a cidade sai como `sao paulo` e uma moto em Campinas é classificada como Match
+metropolitano. O `stateIndex` existe só para isso. Quando o estado é o único
+segmento, como em `"Rio de Janeiro"` sem UF, o fallback final o reaproveita como
+cidade, que é o comportamento correto para a capital.
+
+A segunda: a UF colada por hífen ou espaço simples, `"Curitiba-PR"` e
+`"Curitiba PR"`, não é separada pela segmentação, porque o hífen só separa com
+espaço ao lado. Por isso `trailingState` extrai a sigla final antes de segmentar.
+`"Embu-Guaçu"` não é afetada porque seu último token tem cinco letras.
 
 O hífen só separa quando tem espaço de pelo menos um lado, para que
 `"Embu-Guaçu"` não se parta em dois. `cityKey` normaliza hífen para espaço na
