@@ -14,6 +14,15 @@ func TestParseLocation(t *testing.T) {
 		{"São José dos Pinhais - PR", "sao jose dos pinhais", "PR"},
 		{"Niterói", "niteroi", ""},
 		{"", "", ""},
+		{"Rio de Janeiro - RJ - Brasil", "rio de janeiro", "RJ"},
+		{"Guarulhos - SP (Cumbica)", "guarulhos", "SP"},
+		{"São Paulo (SP)", "sao paulo", "SP"},
+		{"Curitiba - Paraná", "curitiba", "PR"},
+		{"Copacabana, Rio de Janeiro - RJ", "rio de janeiro", "RJ"},
+		{"Embu-Guaçu - SP", "embu guacu", "SP"},
+		{"Embu Guaçu - SP", "embu guacu", "SP"},
+		{"Lapa, São Paulo - SP", "sao paulo", "SP"},
+		{"Curitiba- PR", "curitiba", "PR"},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -40,6 +49,8 @@ func TestLocationTier(t *testing.T) {
 		{"belo horizonte", "MG", "outside"},
 		{"", "", "outside"},
 		{"niteroi", "", "metro"},
+		{"embu guacu", "SP", "metro"},
+		{"lapa", "SP", "state"},
 	}
 	for _, c := range cases {
 		t.Run(c.city+"/"+c.state, func(t *testing.T) {
