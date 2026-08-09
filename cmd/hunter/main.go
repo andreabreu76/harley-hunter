@@ -88,16 +88,19 @@ func sendAlerts(cfg config.Config, db *store.Store) {
 }
 
 func buildSources(cfg config.Config) ([]crawl.Source, error) {
-	fetcher := source.NewBrowserFetcher(cfg.DevtoolsURL)
+	browser := source.NewBrowserFetcher(cfg.DevtoolsURL)
+	direct := source.NewHTTPFetcher()
 	sources := make([]crawl.Source, 0, len(cfg.Sources))
 	for _, name := range cfg.Sources {
 		switch name {
 		case model.SourceOLX:
-			sources = append(sources, source.NewOLX(fetcher, cfg.SourceURLs[name]))
+			sources = append(sources, source.NewOLX(browser, cfg.SourceURLs[name]))
 		case model.SourceMercadoLivre:
-			sources = append(sources, source.NewMercadoLivre(fetcher, cfg.SourceURLs[name]))
+			sources = append(sources, source.NewMercadoLivre(browser, cfg.SourceURLs[name]))
 		case model.SourceWebmotors:
-			sources = append(sources, source.NewWebmotors(fetcher, cfg.SourceURLs[name]))
+			sources = append(sources, source.NewWebmotors(browser, cfg.SourceURLs[name]))
+		case model.SourceMobiauto:
+			sources = append(sources, source.NewMobiauto(direct, cfg.SourceURLs[name]))
 		default:
 			return nil, fmt.Errorf("unknown source in config: %s", name)
 		}
@@ -115,7 +118,7 @@ func printReport(cfg config.Config, report crawl.Report, elapsed time.Duration) 
 	}
 	if report.SharedCause != nil {
 		fmt.Printf("all %d sources failed with the same cause: %v\n", len(report.Results), report.SharedCause)
-		fmt.Printf("every source reads its pages through Chrome at %s; check that it is running\n", cfg.DevtoolsURL)
+		fmt.Printf("olx, mercadolivre and webmotors read their pages through Chrome at %s; check that it is running\n", cfg.DevtoolsURL)
 	}
 	if report.StoreFailures > 0 {
 		fmt.Printf("storage failures: %d (first: %v)\n", report.StoreFailures, report.StoreErr)

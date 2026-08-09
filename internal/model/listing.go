@@ -12,6 +12,7 @@ const (
 	SourceOLX          = "olx"
 	SourceMercadoLivre = "mercadolivre"
 	SourceWebmotors    = "webmotors"
+	SourceMobiauto     = "mobiauto"
 )
 
 const (

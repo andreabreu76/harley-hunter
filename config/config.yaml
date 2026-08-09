@@ -3,6 +3,7 @@ sources:
   - olx
   - mercadolivre
   - webmotors
+  - mobiauto
 devtools_url: http://127.0.0.1:9222
 source_urls:
   olx:
@@ -22,6 +23,13 @@ source_urls:
     - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fpr%3Ftipoveiculo%3Dmotos%26estadocidade%3DParan%25C3%25A1%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
     - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fsp%3Ftipoveiculo%3Dmotos%26estadocidade%3DS%25C3%25A3o%2520Paulo%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
     - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Frj%3Ftipoveiculo%3Dmotos%26estadocidade%3DRio%2520de%2520Janeiro%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+  mobiauto:
+    - https://www.mobiauto.com.br/comprar/motos/pr/harley-davidson/street-glide
+    - https://www.mobiauto.com.br/comprar/motos/sp/harley-davidson/street-glide
+    - https://www.mobiauto.com.br/comprar/motos/rj/harley-davidson/street-glide
+    - https://www.mobiauto.com.br/comprar/motos/pr/harley-davidson/road-glide
+    - https://www.mobiauto.com.br/comprar/motos/sp/harley-davidson/road-glide
+    - https://www.mobiauto.com.br/comprar/motos/rj/harley-davidson/road-glide
 match:
   years: [2014, 2015]
   maybe_years: [2013, 2016]
