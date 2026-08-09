@@ -93,12 +93,9 @@ CREATE INDEX IF NOT EXISTS idx_source_runs_source ON source_runs (source, starte
 `
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	db, err := sql.Open("sqlite", path+"?_pragma=foreign_keys(1)")
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return nil, fmt.Errorf("enabling foreign keys: %w", err)
 	}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
@@ -114,7 +111,7 @@ const rowColumns = `
     l.id, l.source, l.external_id, l.url, l.title, l.bike, l.variant, l.year,
     l.price_cents, l.km, l.city, l.state, l.image_url, l.verdict, l.user_state,
     l.fingerprint, l.first_seen_at, l.last_seen_at,
-    (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC LIMIT 1)
+    (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC, p.id ASC LIMIT 1)
 `
 
 func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
@@ -170,7 +167,7 @@ func (s *Store) GetRow(id int64) (Row, []PricePoint, error) {
 	}
 
 	rows, err := s.db.Query(
-		"SELECT price_cents, observed_at FROM price_history WHERE listing_id = ? ORDER BY observed_at ASC", id)
+		"SELECT price_cents, observed_at FROM price_history WHERE listing_id = ? ORDER BY observed_at ASC, id ASC", id)
 	if err != nil {
 		return Row{}, nil, fmt.Errorf("loading price history: %w", err)
 	}
@@ -191,7 +188,7 @@ func (s *Store) RecordRun(source string, started, finished time.Time, itemCount 
 	_, err := s.db.Exec(
 		`INSERT INTO source_runs (source, started_at, finished_at, item_count, status, error)
          VALUES (?, ?, ?, ?, ?, ?)`,
-		source, started, finished, itemCount, status, errMessage)
+		source, started.UTC(), finished.UTC(), itemCount, status, errMessage)
 	if err != nil {
 		return fmt.Errorf("recording source run: %w", err)
 	}

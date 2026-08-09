@@ -18,6 +18,8 @@ type UpsertResult struct {
 }
 
 func (s *Store) Upsert(l model.Listing, now time.Time) (UpsertResult, error) {
+	now = now.UTC()
+
 	tx, err := s.db.Begin()
 	if err != nil {
 		return UpsertResult{}, fmt.Errorf("beginning transaction: %w", err)
