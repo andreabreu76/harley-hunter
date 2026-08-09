@@ -461,6 +461,10 @@ func TestParsePrice(t *testing.T) {
 		{"Moto avaliada em R$ 74.900", 7490000, true},
 		{"Street Glide 2015 até 2016, R$ 74.900", 7490000, true},
 		{"Aceito troca ate R$ 60.000, moto R$ 74.900", 7490000, true},
+		{"Entrada de R$ 20.000, valor total 74 mil", 7400000, true},
+		{"Entrada 20 mil, moto 74 mil", 7400000, true},
+		{"Sinal de R$ 15.000, restante 74 mil", 7400000, true},
+		{"Entrada 20 mil, Street Glide R$ 74.900", 7490000, true},
 		{"12 mil kms", 0, false},
 		{"42 mil kms rodados", 0, false},
 		{"12 mil quilometros", 0, false},
@@ -484,11 +488,22 @@ Os casos com `km` são o coração deste teste. `ParsePrice` recebe tanto o camp
 
 O caso `"negociável"` também é deliberado: é a palavra mais comum em anúncio de moto e não pode ser confundida com preço indisponível.
 
-A ordem de reconhecimento coloca o `R$` explícito primeiro, porque é o marcador
-mais confiável de preço num texto qualquer. Nenhum ramo desiste quando o valor
-sai implausível: a varredura continua para o próximo candidato. Sem isso, uma
-legenda como `"3 mil curtidas no post, R$ 74.900"` travaria no `3 mil`, que é
-baixo demais, e o preço marcado com `R$` nunca seria alcançado.
+`ParsePrice` reúne TODOS os candidatos num conjunto único e escolhe o maior
+plausível, em vez de percorrer ramos independentes e devolver no primeiro que
+sobreviver. Essa é a propriedade central: um decoy plausível não pode vencer só
+por aparecer antes.
+
+Ramos independentes com retorno antecipado falham em qualquer notação mista.
+`"Entrada de R$ 20.000, valor total 74 mil"` marca a entrada com `R$` e o preço
+real com "mil"; um ramo `R$` que retorne assim que acha algo devolve a entrada e
+nunca chega no preço. `"Entrada 20 mil, moto 74 mil"` é o espelho, sem nenhum
+`R$` no texto, e um ramo de milhares que pare no primeiro sobrevivente devolve
+20 mil. Ambos fabricam preço baixo, que passa sob o teto e vira alerta falso.
+
+Cada coletor mantém o filtro que lhe cabe: valores de `R$` governados por um
+`até` colado são descartados, e valores em milhares seguidos de palavra
+não-monetária também. O número puro só é considerado quando nada mais foi
+encontrado, porque só faz sentido quando a string inteira é o campo de preço.
 
 Valores precedidos IMEDIATAMENTE por `até` são descartados antes da comparação.
 `"Moto R$ 74.900, troco por até R$ 90.000"` cita um teto de avaliação da moto do
@@ -649,20 +664,19 @@ func ParsePrice(s string) (int64, bool) {
 	}
 
 	best := int64(0)
+	consider := func(cents int64) {
+		if value, ok := plausible(cents); ok && value > best {
+			best = value
+		}
+	}
+
 	for _, loc := range priceWithSymbol.FindAllStringSubmatchIndex(s, -1) {
 		if precededByCeilingMarker(s, loc[0]) {
 			continue
 		}
-		value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64)
-		if err != nil {
-			continue
+		if value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64); err == nil {
+			consider(int64(value*100 + 0.5))
 		}
-		if cents, ok := plausible(int64(value*100 + 0.5)); ok && cents > best {
-			best = cents
-		}
-	}
-	if best > 0 {
-		return best, true
 	}
 
 	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
@@ -670,21 +684,19 @@ func ParsePrice(s string) (int64, bool) {
 			continue
 		}
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			if cents, ok := plausible(int64(value*1000*100 + 0.5)); ok {
-				return cents, true
+			consider(int64(value*1000*100 + 0.5))
+		}
+	}
+
+	if best == 0 {
+		if m := bareNumber.FindStringSubmatch(s); m != nil {
+			if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
+				consider(int64(value*100 + 0.5))
 			}
 		}
 	}
 
-	if m := bareNumber.FindStringSubmatch(s); m != nil {
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			if cents, ok := plausible(int64(value*100 + 0.5)); ok {
-				return cents, true
-			}
-		}
-	}
-
-	return 0, false
+	return best, best > 0
 }
 
 var nonPricePrefixes = []string{
