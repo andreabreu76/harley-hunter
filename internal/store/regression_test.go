@@ -111,6 +111,56 @@ func TestForeignKeysAreOnForEveryPooledConnection(t *testing.T) {
 	}
 }
 
+func TestCompetingWriterWaitsInsteadOfFailing(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "busy.db")
+	crawler, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { crawler.Close() })
+	dashboard, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { dashboard.Close() })
+
+	tx, err := dashboard.db.Begin()
+	if err != nil {
+		t.Fatalf("Begin: %v", err)
+	}
+	if _, err := tx.Exec(
+		`INSERT INTO listings (source, external_id, url, title, bike, variant, verdict, first_seen_at, last_seen_at)
+         VALUES ('olx', 'holder', 'u', 't', 'b', 'v', 'match', ?, ?)`,
+		time.Now().UTC(), time.Now().UTC()); err != nil {
+		t.Fatalf("holding the write lock: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := crawler.Upsert(sample(6900000), time.Now())
+		done <- err
+	}()
+
+	select {
+	case err := <-done:
+		tx.Rollback()
+		t.Fatalf("competing writer gave up immediately instead of waiting: %v", err)
+	case <-time.After(250 * time.Millisecond):
+	}
+
+	if err := tx.Commit(); err != nil {
+		t.Fatalf("Commit: %v", err)
+	}
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Errorf("competing writer failed after the lock was released: %v", err)
+		}
+	case <-time.After(6 * time.Second):
+		t.Fatal("competing writer never completed")
+	}
+}
+
 func pricesOf(points []PricePoint) []int64 {
 	out := make([]int64, len(points))
 	for i, p := range points {

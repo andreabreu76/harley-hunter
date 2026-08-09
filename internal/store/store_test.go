@@ -135,6 +135,25 @@ func TestPendingNotificationsOnlyReturnsUnnotifiedMatches(t *testing.T) {
 	}
 }
 
+func TestSetUserState(t *testing.T) {
+	s := openTemp(t)
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	if err := s.SetUserState(res.ID, "contacted"); err != nil {
+		t.Fatalf("SetUserState: %v", err)
+	}
+	row, _, err := s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.UserState != "contacted" {
+		t.Errorf("UserState = %q, want contacted", row.UserState)
+	}
+}
+
 func TestRecentRunCounts(t *testing.T) {
 	s := openTemp(t)
 	now := time.Now()
