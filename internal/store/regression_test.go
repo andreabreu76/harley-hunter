@@ -1,10 +1,13 @@
 package store
 
 import (
+	"fmt"
 	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/andreabreu76/harley-hunter/internal/model"
 )
 
 func TestOrderingSurvivesATimezoneChange(t *testing.T) {
@@ -111,6 +114,58 @@ func TestForeignKeysAreOnForEveryPooledConnection(t *testing.T) {
 	}
 }
 
+func TestOrderingIsDeterministicWhenTimestampsTie(t *testing.T) {
+	s := openTemp(t)
+	now := time.Now()
+
+	var ids []int64
+	for i := 0; i < 5; i++ {
+		l := sample(7200000)
+		l.ExternalID = fmt.Sprintf("tied-%d", i)
+		res, err := s.Upsert(l, now)
+		if err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+		ids = append(ids, res.ID)
+	}
+
+	pending, err := s.PendingNotifications(10)
+	if err != nil {
+		t.Fatalf("PendingNotifications: %v", err)
+	}
+	if got := idsOf(pending); !equalIDs(got, ids) {
+		t.Errorf("PendingNotifications order = %v, want %v (oldest first, id ascending on ties)", got, ids)
+	}
+
+	listed, err := s.ListByVerdict(model.VerdictMatch)
+	if err != nil {
+		t.Fatalf("ListByVerdict: %v", err)
+	}
+	if got := idsOf(listed); !equalIDs(got, reversedIDs(ids)) {
+		t.Errorf("ListByVerdict order = %v, want %v (newest first, id descending on ties)", got, reversedIDs(ids))
+	}
+
+	for _, c := range []int{10, 20, 30, 40} {
+		if err := s.RecordRun("olx", now, now, c, "ok", ""); err != nil {
+			t.Fatalf("RecordRun: %v", err)
+		}
+	}
+	counts, err := s.RecentRunCounts("olx", 10)
+	if err != nil {
+		t.Fatalf("RecentRunCounts: %v", err)
+	}
+	want := []int{40, 30, 20, 10}
+	if len(counts) != len(want) {
+		t.Fatalf("counts = %v, want %v", counts, want)
+	}
+	for i := range want {
+		if counts[i] != want[i] {
+			t.Errorf("RecentRunCounts = %v, want %v (most recent first on tied timestamps)", counts, want)
+			break
+		}
+	}
+}
+
 func TestCompetingWriterWaitsInsteadOfFailing(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "busy.db")
 	crawler, err := Open(path)
@@ -159,6 +214,34 @@ func TestCompetingWriterWaitsInsteadOfFailing(t *testing.T) {
 	case <-time.After(6 * time.Second):
 		t.Fatal("competing writer never completed")
 	}
+}
+
+func idsOf(rows []Row) []int64 {
+	out := make([]int64, len(rows))
+	for i, r := range rows {
+		out[i] = r.ID
+	}
+	return out
+}
+
+func reversedIDs(ids []int64) []int64 {
+	out := make([]int64, len(ids))
+	for i, id := range ids {
+		out[len(ids)-1-i] = id
+	}
+	return out
+}
+
+func equalIDs(a, b []int64) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func pricesOf(points []PricePoint) []int64 {

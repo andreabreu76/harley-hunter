@@ -126,7 +126,7 @@ func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
 }
 
 func (s *Store) ListByVerdict(v model.Verdict) ([]Row, error) {
-	query := "SELECT " + rowColumns + " FROM listings l WHERE l.verdict = ? ORDER BY l.first_seen_at DESC"
+	query := "SELECT " + rowColumns + " FROM listings l WHERE l.verdict = ? ORDER BY l.first_seen_at DESC, l.id DESC"
 	rows, err := s.db.Query(query, string(v))
 	if err != nil {
 		return nil, fmt.Errorf("querying listings: %w", err)
@@ -138,7 +138,7 @@ func (s *Store) ListByVerdict(v model.Verdict) ([]Row, error) {
 func (s *Store) PendingNotifications(limit int) ([]Row, error) {
 	query := "SELECT " + rowColumns + ` FROM listings l
         WHERE l.verdict = 'match' AND l.notified = 0 AND l.status = 'active'
-        ORDER BY l.first_seen_at ASC LIMIT ?`
+        ORDER BY l.first_seen_at ASC, l.id ASC LIMIT ?`
 	rows, err := s.db.Query(query, limit)
 	if err != nil {
 		return nil, fmt.Errorf("querying pending notifications: %w", err)
@@ -199,7 +199,7 @@ func (s *Store) RecordRun(source string, started, finished time.Time, itemCount 
 
 func (s *Store) RecentRunCounts(source string, limit int) ([]int, error) {
 	rows, err := s.db.Query(
-		"SELECT item_count FROM source_runs WHERE source = ? ORDER BY started_at DESC LIMIT ?", source, limit)
+		"SELECT item_count FROM source_runs WHERE source = ? ORDER BY started_at DESC, id DESC LIMIT ?", source, limit)
 	if err != nil {
 		return nil, fmt.Errorf("querying recent runs: %w", err)
 	}
