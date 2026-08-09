@@ -946,6 +946,15 @@ func TestParseLocation(t *testing.T) {
 		{"São José dos Pinhais - PR", "sao jose dos pinhais", "PR"},
 		{"Niterói", "niteroi", ""},
 		{"", "", ""},
+		{"Rio de Janeiro - RJ - Brasil", "rio de janeiro", "RJ"},
+		{"Guarulhos - SP (Cumbica)", "guarulhos", "SP"},
+		{"São Paulo (SP)", "sao paulo", "SP"},
+		{"Curitiba - Paraná", "curitiba", "PR"},
+		{"Copacabana, Rio de Janeiro - RJ", "rio de janeiro", "RJ"},
+		{"Embu-Guaçu - SP", "embu guacu", "SP"},
+		{"Embu Guaçu - SP", "embu guacu", "SP"},
+		{"Lapa, São Paulo - SP", "sao paulo", "SP"},
+		{"Curitiba- PR", "curitiba", "PR"},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -972,6 +981,8 @@ func TestLocationTier(t *testing.T) {
 		{"belo horizonte", "MG", "outside"},
 		{"", "", "outside"},
 		{"niteroi", "", "metro"},
+		{"embu guacu", "SP", "metro"},
+		{"lapa", "SP", "state"},
 	}
 	for _, c := range cases {
 		t.Run(c.city+"/"+c.state, func(t *testing.T) {
@@ -1047,7 +1058,7 @@ var metroCities = map[string]string{
 	"francisco morato":       "SP",
 	"mairipora":              "SP",
 	"itapecerica da serra":   "SP",
-	"embu-guacu":             "SP",
+	"embu guacu":            "SP",
 	"curitiba":               "PR",
 	"sao jose dos pinhais":   "PR",
 	"pinhais":                "PR",
@@ -1069,6 +1080,18 @@ var metroCities = map[string]string{
 }
 
 var targetStates = map[string]bool{"RJ": true, "SP": true, "PR": true}
+
+var stateNames = map[string]string{
+	"acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM",
+	"bahia": "BA", "ceara": "CE", "distrito federal": "DF",
+	"espirito santo": "ES", "goias": "GO", "maranhao": "MA",
+	"mato grosso": "MT", "mato grosso do sul": "MS", "minas gerais": "MG",
+	"para": "PA", "paraiba": "PB", "parana": "PR", "pernambuco": "PE",
+	"piaui": "PI", "rio de janeiro": "RJ", "rio grande do norte": "RN",
+	"rio grande do sul": "RS", "rondonia": "RO", "roraima": "RR",
+	"santa catarina": "SC", "sao paulo": "SP", "sergipe": "SE",
+	"tocantins": "TO",
+}
 ```
 
 - [ ] **Step 4: Implementar a análise de local**
@@ -1083,28 +1106,74 @@ import (
 	"strings"
 )
 
-var stateSuffix = regexp.MustCompile(`(?i)[\s,/\-]+([A-Z]{2})\s*$`)
+var segmentSplit = regexp.MustCompile(`[,/()]+|\s+-\s*|\s*-\s+`)
 
 func ParseLocation(s string) (string, string) {
-	s = strings.TrimSpace(s)
-	if s == "" {
+	if strings.TrimSpace(s) == "" {
 		return "", ""
 	}
-	state := ""
-	if m := stateSuffix.FindStringSubmatch(s); m != nil {
-		candidate := strings.ToUpper(m[1])
-		if isBrazilianState(candidate) {
-			state = candidate
-			s = s[:len(s)-len(m[0])]
+	segments := splitSegments(Fold(s))
+	if len(segments) == 0 {
+		return "", ""
+	}
+
+	state, stateIndex := findState(segments)
+
+	fallback := ""
+	for _, seg := range segments {
+		metroState, ok := metroCities[cityKey(seg)]
+		if !ok {
+			continue
+		}
+		if state != "" && metroState == state {
+			return cityKey(seg), state
+		}
+		if fallback == "" {
+			fallback = cityKey(seg)
 		}
 	}
-	city := Fold(strings.Trim(s, " ,-/"))
-	return city, state
+	if fallback != "" {
+		return fallback, state
+	}
+
+	for i, seg := range segments {
+		if i != stateIndex {
+			return seg, state
+		}
+	}
+	return "", state
+}
+
+func splitSegments(folded string) []string {
+	var out []string
+	for _, seg := range segmentSplit.Split(folded, -1) {
+		if seg = strings.TrimSpace(seg); seg != "" {
+			out = append(out, seg)
+		}
+	}
+	return out
+}
+
+func findState(segments []string) (string, int) {
+	for i := len(segments) - 1; i >= 0; i-- {
+		seg := segments[i]
+		if len(seg) == 2 && isBrazilianState(strings.ToUpper(seg)) {
+			return strings.ToUpper(seg), i
+		}
+		if uf, ok := stateNames[seg]; ok {
+			return uf, i
+		}
+	}
+	return "", -1
+}
+
+func cityKey(s string) string {
+	return strings.ReplaceAll(s, "-", " ")
 }
 
 func LocationTier(city, state string) string {
 	if city != "" {
-		if metroState, ok := metroCities[city]; ok {
+		if metroState, ok := metroCities[cityKey(city)]; ok {
 			if state == "" || state == metroState {
 				return "metro"
 			}
@@ -1126,6 +1195,28 @@ func isBrazilianState(s string) bool {
 	return false
 }
 ```
+
+O local vem em formatos muito mais variados que `Cidade - UF`. `ParseLocation`
+quebra a string em segmentos por vírgula, barra, parênteses e hífen cercado de
+espaço, procura o estado de trás para frente (sigla de duas letras ou nome por
+extenso) e então procura a cidade testando cada segmento contra a tabela.
+
+Cada regra existe por um formato real que a versão presa ao sufixo rejeitava por
+completo: `"Rio de Janeiro - RJ - Brasil"` e `"Guarulhos - SP (Cumbica)"` têm
+texto depois da UF; `"São Paulo (SP)"` põe a UF entre parênteses;
+`"Curitiba - Paraná"` escreve o estado por extenso, que é o formato do Mercado
+Livre. Todos viravam `outside`, ou seja, anúncio dentro do alvo descartado.
+`"Copacabana, Rio de Janeiro - RJ"` prefixa o bairro e rebaixava um Match a
+Talvez.
+
+Quando mais de um segmento bate a tabela — `"Lapa, São Paulo - SP"`, em que Lapa
+é município do Paraná e bairro de São Paulo — vence o segmento cuja UF na tabela
+coincide com o estado detectado. Sem esse desempate a cidade sairia como `lapa`
+com estado `SP`, combinação que não é metro e rebaixaria o anúncio.
+
+O hífen só separa quando tem espaço de pelo menos um lado, para que
+`"Embu-Guaçu"` não se parta em dois. `cityKey` normaliza hífen para espaço na
+comparação, de modo que as duas grafias encontram a mesma entrada.
 
 - [ ] **Step 5: Rodar os testes e confirmar que passam**
 
