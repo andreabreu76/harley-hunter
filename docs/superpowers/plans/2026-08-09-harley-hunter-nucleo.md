@@ -4122,6 +4122,26 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 
 Adicione `fmt` e `github.com/andreabreu76/harley-hunter/internal/notify` aos imports do pacote.
 
+DECISÃO POSTERIOR DO DONO (2026-08-09): a entrega por Twilio (SMS/WhatsApp) sai
+do caminho ativo. O token da conta disponível estava selado pelo DigitalOcean e
+era irrecuperável, e em vez de esperar a troca o dono optou por remover a
+dependência: os resultados vivem no dashboard, e anúncio novo em Match dispara
+uma NOTIFICAÇÃO NATIVA DO MACOS, sem credencial nenhuma.
+
+A implementação troca só o transporte: a interface `Notifier` permanece, e
+`notify.MacOS` a implementa via `osascript -e 'display notification ... with
+title ... sound name ...'`. Toda a lógica de fila permanece intacta —
+deduplicação por impressão digital com quilometragem, teto por rodada contando
+envios, `MarkNotified` só após sucesso, reenvio na rodada seguinte em falha. O
+código Twilio é REMOVIDO do repositório (recuperável do histórico git se o SMS
+voltar um dia); `ALERT_TO`, `ALERT_CHANNEL` e as variáveis `TWILIO_*` deixam de
+ser lidas, e a coleta não avisa mais sobre credencial ausente porque não há
+credencial a ter.
+
+Como o `launchd` roda o agente na sessão gráfica do usuário, o `osascript`
+exibe o banner normalmente. O clique no banner não abre URL — o destino do
+clique é o dashboard, que é onde os detalhes moram.
+
 O canal padrão é WhatsApp, pelo mesmo endpoint da Twilio com o prefixo
 `whatsapp:` em `From` e `To`. Três razões: a mensagem vai inteira num único
 envio, sem contagem de segmentos; o link do anúncio chega clicável; e o custo
