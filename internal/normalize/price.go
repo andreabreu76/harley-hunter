@@ -25,20 +25,19 @@ func ParsePrice(s string) (int64, bool) {
 	}
 
 	best := int64(0)
+	consider := func(cents int64) {
+		if value, ok := plausible(cents); ok && value > best {
+			best = value
+		}
+	}
+
 	for _, loc := range priceWithSymbol.FindAllStringSubmatchIndex(s, -1) {
 		if precededByCeilingMarker(s, loc[0]) {
 			continue
 		}
-		value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64)
-		if err != nil {
-			continue
+		if value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64); err == nil {
+			consider(int64(value*100 + 0.5))
 		}
-		if cents, ok := plausible(int64(value*100 + 0.5)); ok && cents > best {
-			best = cents
-		}
-	}
-	if best > 0 {
-		return best, true
 	}
 
 	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
@@ -46,21 +45,19 @@ func ParsePrice(s string) (int64, bool) {
 			continue
 		}
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			if cents, ok := plausible(int64(value*1000*100 + 0.5)); ok {
-				return cents, true
+			consider(int64(value*1000*100 + 0.5))
+		}
+	}
+
+	if best == 0 {
+		if m := bareNumber.FindStringSubmatch(s); m != nil {
+			if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
+				consider(int64(value*100 + 0.5))
 			}
 		}
 	}
 
-	if m := bareNumber.FindStringSubmatch(s); m != nil {
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			if cents, ok := plausible(int64(value*100 + 0.5)); ok {
-				return cents, true
-			}
-		}
-	}
-
-	return 0, false
+	return best, best > 0
 }
 
 var ceilingMarkers = []string{"ate", "até"}
