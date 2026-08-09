@@ -784,6 +784,10 @@ func TestDetectBike(t *testing.T) {
 		{"Harley Davidson Touring 1690 2015", model.BikeTouringUnknown, model.VariantUnknown},
 		{"Honda Gold Wing 2015", model.BikeOther, model.VariantUnknown},
 		{"Harley Davidson Iron 883", model.BikeOther, model.VariantUnknown},
+		{"harley-davidson street-glide 2015", model.BikeStreetGlide, model.VariantBase},
+		{"Harley-Davidson Road-Glide Special 2015", model.BikeRoadGlide, model.VariantSpecial},
+		{"H-D Street Glide 2014", model.BikeStreetGlide, model.VariantBase},
+		{"Harley-Davidson Electra-Glide 2015", model.BikeElectraGlide, model.VariantUnknown},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
@@ -833,6 +837,8 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+var compactor = strings.NewReplacer(" ", "", "-", "", ".", "", "/", "")
+
 func Fold(s string) string {
 	decomposed := norm.NFD.String(strings.ToLower(s))
 	var b strings.Builder
@@ -847,7 +853,7 @@ func Fold(s string) string {
 
 func DetectBike(text string) (string, string) {
 	t := Fold(text)
-	compact := strings.ReplaceAll(t, " ", "")
+	compact := compactor.Replace(t)
 
 	switch {
 	case containsAny(t, compact, "electra glide", "electraglide", "flht"):
@@ -856,7 +862,7 @@ func DetectBike(text string) (string, string) {
 		return model.BikeRoadGlide, detectVariant(t, compact, "fltrxse", "fltrxs")
 	case containsAny(t, compact, "street glide", "streetglide", "stglide", "flhx"):
 		return model.BikeStreetGlide, detectVariant(t, compact, "flhxse", "flhxs")
-	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic", "flhtk"):
+	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic"):
 		return model.BikeUltra, model.VariantUnknown
 	case isHarley(t) && containsAny(t, compact, "touring", "1690", "1745", "rushmore"):
 		return model.BikeTouringUnknown, model.VariantUnknown
@@ -890,6 +896,10 @@ func containsAny(t, compact string, needles ...string) bool {
 ```
 
 A ordem do `switch` é a regra de correção: Electra Glide é testada antes de Road e Street porque o texto pode conter mais de um termo, e a variante mais específica precisa ganhar. O código `flhxse` é testado antes de `flhxs` pelo mesmo motivo.
+
+O `compactor` remove pontuação além de espaços porque anúncio brasileiro escreve `"Harley-Davidson Street-Glide"` tanto quanto a forma com espaços. Removendo só espaços, `"street-glide"` não casa nem `"street glide"` nem `"streetglide"`, e uma Street Glide dentro do alvo é classificada como `other` e descartada em silêncio. A correção fica no `compactor`, não em `Fold`, justamente para não alterar a normalização de nomes de cidade que a Task 5 faz com `Fold`.
+
+O código `flhtk` não aparece no ramo Ultra porque `flht`, no ramo Electra Glide, já o captura — e a classificação resultante está correta, já que a FLHTK é uma Electra Glide Ultra Limited. Incluí-lo ali seria código inalcançável.
 
 - [ ] **Step 5: Rodar os testes e confirmar que passam**
 
