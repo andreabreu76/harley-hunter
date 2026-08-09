@@ -2576,6 +2576,43 @@ Expected: PASS nos quatro testes.
 
 Se o scan de `first_seen_at` ou `last_seen_at` falhar com erro de conversão, o driver devolveu texto em vez de `time.Time`. Nesse caso abra a conexão com `sql.Open("sqlite", path+"?_time_format=sqlite")` e rode os testes de novo. Verifique antes de seguir: o histórico de preço depende dessas colunas.
 
+O scan não falha: o `modernc.org/sqlite` grava `time.Time` como texto e lê de
+volta o mesmo instante, com fuso preservado. O que quebra é a **ordenação**. O
+texto gravado é `2026-08-09 18:00:00 -0300 BRT`, hora local seguida do offset,
+e todo `ORDER BY` nessas colunas compara esse texto letra a letra. Duas
+gravações do mesmo instante feitas em fusos diferentes ordenam pela hora de
+parede, não pela linha do tempo — uma coleta às 21:00 UTC gravada como
+`18:00:00 -0300` fica *antes* de outra às 20:00 UTC gravada como
+`20:00:00 +0000`.
+
+Não é hipotético: basta o processo rodar local (`-0300`) e depois em container
+(`TZ=UTC`), ou vice-versa. O histórico de preço é o que mais sofre, porque é
+exatamente a coluna que o painel lê em ordem. Com três observações — 7.500.000,
+7.300.000 e 7.100.000 — gravadas com o fuso mudando no meio, `GetRow` devolvia
+`[7300000 7500000 7100000]` e `FirstPriceCents` virava 7.300.000. A queda que o
+painel anunciaria seria de R$ 2.000, não os R$ 4.000 reais: o sinal de
+negociação sai menor do que é, que é a única direção de erro que importa aqui.
+
+Trocar para `?_time_format=sqlite` **não resolve** — muda a pontuação
+(`2026-08-09 18:00:00-03:00`) e mantém o offset, então a ordenação continua
+lexicográfica sobre hora de parede. A correção é normalizar para UTC na
+escrita: `now.UTC()` no `Upsert`, `started.UTC()`/`finished.UTC()` no
+`RecordRun`. Todo texto gravado passa a terminar em `+00:00` e a ordem lexical
+volta a ser a ordem cronológica.
+
+`ORDER BY observed_at` também ganha `id` como desempate. Duas observações do
+mesmo anúncio na mesma coleta compartilham o `now`, e com empate no
+`observed_at` o SQLite não promete qual linha vem primeiro — sem o desempate,
+qual preço é "o primeiro já visto" fica indefinido.
+
+`PRAGMA foreign_keys = ON` via `db.Exec` também não vale: pragma é por conexão,
+e o `database/sql` mantém um pool. O comando pega a conexão que estiver livre
+naquele instante e as outras nascem com a checagem desligada — em oito conexões
+simultâneas, sete ficaram com `foreign_keys = 0`. O `ON DELETE CASCADE` do
+`price_history` fica valendo só às vezes, o que é pior que não valer nunca. A
+pragma vai no DSN (`path+"?_pragma=foreign_keys(1)"`), onde o driver a aplica a
+cada conexão que abrir.
+
 - [ ] **Step 7: Commit**
 
 ```bash
