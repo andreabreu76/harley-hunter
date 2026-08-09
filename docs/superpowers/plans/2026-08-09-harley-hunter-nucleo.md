@@ -4077,7 +4077,7 @@ func FormatAlert(r store.Row) string {
 	if r.State != "" {
 		location += "/" + r.State
 	}
-	return fmt.Sprintf("%s%s — %s — %s [%s] %s",
+	return fmt.Sprintf("%s%s - %s - %s [%s] %s",
 		strings.TrimSpace(r.Title), year, price, location, r.Source, r.URL)
 }
 ```
@@ -4099,7 +4099,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 	sent := 0
 	seen := make(map[string]bool, len(pending))
 	for _, row := range pending {
-		if row.Fingerprint != "" && seen[row.Fingerprint] {
+		if row.Fingerprint != "" && row.Km != nil && seen[row.Fingerprint] {
 			if err := s.MarkNotified(row.ID); err != nil {
 				return sent, err
 			}
@@ -4111,7 +4111,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 		if err := s.MarkNotified(row.ID); err != nil {
 			return sent, err
 		}
-		if row.Fingerprint != "" {
+		if row.Fingerprint != "" && row.Km != nil {
 			seen[row.Fingerprint] = true
 		}
 		sent++
@@ -4124,12 +4124,14 @@ Adicione `fmt` e `github.com/andreabreu76/harley-hunter/internal/notify` aos imp
 
 `MarkNotified` só roda depois de o envio ter sucesso — é isso que garante o reenvio na rodada seguinte quando a Twilio falha.
 
-O envio deduplica por impressão digital dentro da rodada. A mesma moto costuma
-estar anunciada na OLX e no Mercado Livre ao mesmo tempo, e numa coleta real a
-mesma FLHX 2014 gerou impressão idêntica nas duas fontes: sem deduplicar seriam
-dois SMS para uma moto só. A cópia repetida é marcada como notificada mesmo sem
-envio, porque é o mesmo veículo e reenviá-la depois seria o mesmo alerta
-duplicado com atraso.
+O envio deduplica por impressão digital dentro da rodada, mas SOMENTE quando a
+quilometragem existe. A impressão usa modelo, ano, faixa de km e cidade; sem km
+a faixa vira `?` e ela deixa de distinguir motos diferentes — numa coleta real,
+duas Street Glide 2014 de Curitiba (R$ 72.000 e R$ 75.000, ambas sem km)
+compartilharam a impressão, e a deduplicação cega silenciaria uma delas para
+sempre. Com km presente ela funciona como deve: a mesma FLHX 2014 com 90.195 km
+apareceu em OLX e Mercado Livre com impressão idêntica, e um só SMS basta. Na
+dúvida, dois SMS para a mesma moto é melhor que zero para uma moto real.
 
 - [ ] **Step 5: Ligar ao comando `crawl`**
 
