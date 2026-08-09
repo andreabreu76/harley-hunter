@@ -2207,6 +2207,25 @@ func TestPendingNotificationsOnlyReturnsUnnotifiedMatches(t *testing.T) {
 	}
 }
 
+func TestSetUserState(t *testing.T) {
+	s := openTemp(t)
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	if err := s.SetUserState(res.ID, "contacted"); err != nil {
+		t.Fatalf("SetUserState: %v", err)
+	}
+	row, _, err := s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.UserState != "contacted" {
+		t.Errorf("UserState = %q, want contacted", row.UserState)
+	}
+}
+
 func TestRecentRunCounts(t *testing.T) {
 	s := openTemp(t)
 	now := time.Now()
@@ -2331,12 +2350,10 @@ CREATE INDEX IF NOT EXISTS idx_source_runs_source ON source_runs (source, starte
 `
 
 func Open(path string) (*Store, error) {
-	db, err := sql.Open("sqlite", path)
+	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
-	}
-	if _, err := db.Exec("PRAGMA foreign_keys = ON"); err != nil {
-		return nil, fmt.Errorf("enabling foreign keys: %w", err)
 	}
 	if _, err := db.Exec(schema); err != nil {
 		return nil, fmt.Errorf("applying schema: %w", err)
@@ -2612,6 +2629,11 @@ simultâneas, sete ficaram com `foreign_keys = 0`. O `ON DELETE CASCADE` do
 `price_history` fica valendo só às vezes, o que é pior que não valer nunca. A
 pragma vai no DSN (`path+"?_pragma=foreign_keys(1)"`), onde o driver a aplica a
 cada conexão que abrir.
+
+O mesmo DSN liga `journal_mode(WAL)` e `busy_timeout(5000)`. A coleta agendada e
+o dashboard são processos distintos sobre o mesmo arquivo: sem WAL, uma escrita
+bloqueia toda leitura, e sem `busy_timeout` a escrita concorrente recebe
+`SQLITE_BUSY` de imediato em vez de esperar sua vez.
 
 - [ ] **Step 7: Commit**
 
