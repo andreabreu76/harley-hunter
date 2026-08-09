@@ -3716,7 +3716,7 @@ git commit -m "feat: crawl orchestration with per-source isolation and health tr
 - Consumes: `store.Row` (Task 8), `crawl.Report` (Task 11)
 - Produces:
   - `notify.Notifier` interface com `Send(ctx context.Context, message string) error`
-  - `notify.NewTwilioFromEnv() (*notify.Twilio, error)` lendo `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_PHONE_NUMBER` (com `TWILIO_FROM` como alternativa) e `ALERT_TO`
+  - `notify.NewTwilioFromEnv() (*notify.Twilio, error)` lendo `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `ALERT_TO` e `ALERT_CHANNEL` (`whatsapp` ou `sms`, padrão `whatsapp`); o remetente vem de `TWILIO_WHATSAPP_FROM` no canal WhatsApp e de `TWILIO_PHONE_NUMBER` (com `TWILIO_FROM` como alternativa) no SMS. No canal WhatsApp, `From` e `To` recebem o prefixo `whatsapp:`
   - `notify.FormatAlert(r store.Row) string`
   - `format.Thousands(value int64) string`, consumida pela Task 13
   - `crawl.Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (sent int, err error)`
@@ -4121,6 +4121,15 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 ```
 
 Adicione `fmt` e `github.com/andreabreu76/harley-hunter/internal/notify` aos imports do pacote.
+
+O canal padrão é WhatsApp, pelo mesmo endpoint da Twilio com o prefixo
+`whatsapp:` em `From` e `To`. Três razões: a mensagem vai inteira num único
+envio, sem contagem de segmentos; o link do anúncio chega clicável; e o custo
+por mensagem no Brasil é menor que o de um SMS de vários segmentos. O SMS
+continua disponível via `ALERT_CHANNEL=sms`, como reserva para quando o
+destinatário não puder receber WhatsApp — inclusive no caso de sandbox da
+Twilio, em que o destino precisa ter aderido previamente; se o envio falhar por
+falta de opt-in, o erro da API diz isso e a troca de canal é imediata.
 
 `MarkNotified` só roda depois de o envio ter sucesso — é isso que garante o reenvio na rodada seguinte quando a Twilio falha.
 
