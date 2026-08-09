@@ -456,6 +456,11 @@ func TestParsePrice(t *testing.T) {
 		{"Moto R$ 74.900, troco por ate R$ 90.000", 7490000, true},
 		{"Street Glide R$ 74.900, aceito troca ate R$ 60.000", 7490000, true},
 		{"Road Glide R$ 72.000, avalio moto ate R$ 95.000", 7200000, true},
+		{"Aceito troca, R$ 74.900", 7490000, true},
+		{"Vendo ou troco, R$ 74.900", 7490000, true},
+		{"Moto avaliada em R$ 74.900", 7490000, true},
+		{"Street Glide 2015 até 2016, R$ 74.900", 7490000, true},
+		{"Aceito troca ate R$ 60.000, moto R$ 74.900", 7490000, true},
 		{"12 mil kms", 0, false},
 		{"42 mil kms rodados", 0, false},
 		{"12 mil quilometros", 0, false},
@@ -485,12 +490,21 @@ sai implausível: a varredura continua para o próximo candidato. Sem isso, uma
 legenda como `"3 mil curtidas no post, R$ 74.900"` travaria no `3 mil`, que é
 baixo demais, e o preço marcado com `R$` nunca seria alcançado.
 
-Valores precedidos por vocabulário de troca são descartados antes da comparação.
+Valores precedidos IMEDIATAMENTE por `até` são descartados antes da comparação.
 `"Moto R$ 74.900, troco por até R$ 90.000"` cita um teto de avaliação da moto do
 comprador, não o preço da que está à venda — e R$ 90.000 não é implausível, é
 aceito como preço e depois reprova no matcher, fazendo uma moto dentro do alvo
-desaparecer. A janela olha os 24 caracteres anteriores ao `R$`, o bastante para
-alcançar "troco por até" sem invadir a frase anterior.
+desaparecer.
+
+O discriminador é o marcador de teto colado ao número, não a vizinhança da
+palavra "troca". Procurar `troc`, `permut` ou `avali` numa janela larga destrói
+preço legítimo, porque essas palavras descrevem o anúncio e não o valor:
+`"Aceito troca, R$ 74.900"`, `"Vendo ou troco, R$ 74.900"` e
+`"Moto avaliada em R$ 74.900"` perderiam o preço inteiro. Pior, a janela larga
+também apagaria os dois valores de
+`"Aceito troca até R$ 60.000, moto R$ 74.900"`, trocando um preço errado por
+nenhum preço. `"Street Glide 2015 até 2016, R$ 74.900"` mostra que nem todo
+`até` governa o número seguinte — por isso a checagem exige o marcador colado.
 
 Entre vários valores marcados com `R$`, vence o MAIOR plausível. Anúncio de moto
 financiada cita entrada e parcela ao lado do preço — `"Entrada de R$ 20.000,
@@ -636,7 +650,7 @@ func ParsePrice(s string) (int64, bool) {
 
 	best := int64(0)
 	for _, loc := range priceWithSymbol.FindAllStringSubmatchIndex(s, -1) {
-		if precededByNonPriceContext(s, loc[0]) {
+		if precededByCeilingMarker(s, loc[0]) {
 			continue
 		}
 		value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64)
@@ -688,16 +702,16 @@ func isNonPriceWord(s string) bool {
 	return false
 }
 
-var nonPriceContext = []string{"troc", "permut", "avali", "ate ", "até "}
+var ceilingMarkers = []string{"ate", "até"}
 
-func precededByNonPriceContext(s string, at int) bool {
-	start := at - 24
+func precededByCeilingMarker(s string, at int) bool {
+	start := at - 8
 	if start < 0 {
 		start = 0
 	}
-	window := strings.ToLower(s[start:at])
-	for _, word := range nonPriceContext {
-		if strings.Contains(window, word) {
+	window := strings.TrimRight(strings.ToLower(s[start:at]), " ")
+	for _, marker := range ceilingMarkers {
+		if strings.HasSuffix(window, marker) {
 			return true
 		}
 	}
