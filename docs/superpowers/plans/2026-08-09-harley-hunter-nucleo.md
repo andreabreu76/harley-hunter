@@ -1168,10 +1168,12 @@ func ParseLocation(s string) (string, string) {
 		return fallback, state
 	}
 
-	for i := len(segments) - 1; i >= 0; i-- {
-		if i != stateIndex {
-			return segments[i], state
-		}
+	start := len(segments) - 1
+	if stateIndex >= 0 {
+		start = stateIndex - 1
+	}
+	if start >= 0 {
+		return segments[start], state
 	}
 	if stateIndex >= 0 {
 		return cityKey(segments[stateIndex]), state
@@ -1270,12 +1272,19 @@ simultaneamente cidade e estado, e o que os desambigua é a posição: em
 continuam aceitas em qualquer posição.
 
 Quando nenhum segmento consta da tabela de cidades, o fallback devolve o
-ÚLTIMO segmento que não é o estado, não o primeiro. Anúncio real põe a cidade
-imediatamente antes do estado, e o que vier antes dela é bairro:
-`"Vila Isabel, Volta Redonda - RJ"` deve devolver `volta redonda`, não
-`vila isabel`. O tier não muda nesse caso, já que nenhuma das duas está na
-tabela metropolitana, mas a cidade é gravada no banco e exibida no dashboard,
-então o dado errado apareceria para quem revisa.
+segmento IMEDIATAMENTE ANTERIOR ao estado — `stateIndex - 1` — e não o primeiro
+nem o último. Anúncio real põe a cidade colada ao estado; o que vem antes dela é
+bairro e o que vem depois é ruído. `"Vila Isabel, Volta Redonda - RJ"` deve
+devolver `volta redonda`, não `vila isabel`. O tier não muda nesse caso, já que
+nenhuma das duas está na tabela metropolitana, mas a cidade é gravada no banco e
+exibida no dashboard, então o dado errado apareceria para quem revisa.
+
+O limite superior da varredura é o que importa e é fácil errar: varrer de trás
+para frente sem parar no estado devolve o ruído do fim, quebrando
+`"Campinas - São Paulo - Brasil"` (viria `brasil`) e
+`"Santos, São Paulo (Zona Leste)"` (viria `zona leste`) — casos que esta mesma
+tabela de testes exige. Quando nenhum estado é encontrado, a varredura começa no
+último segmento, porque aí não há sufixo a evitar.
 
 O gate é por posição inicial e não por posição final porque o sufixo depois do
 estado é comum: `"Campinas - São Paulo - Brasil"` e
