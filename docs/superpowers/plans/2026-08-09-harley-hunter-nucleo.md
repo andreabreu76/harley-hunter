@@ -2708,7 +2708,7 @@ A OLX serve os resultados dentro de um bloco `<script id="__NEXT_DATA__" type="a
 ```bash
 mkdir -p internal/source/testdata
 curl -sL -A 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' \
-  'https://www.olx.com.br/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide' \
+  'https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide' \
   -o internal/source/testdata/olx-search.html
 grep -c '__NEXT_DATA__' internal/source/testdata/olx-search.html
 ```
@@ -2797,8 +2797,16 @@ package source
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
+	"github.com/chromedp/chromedp"
+)
+
+const (
+	defaultDevtoolsURL = "http://127.0.0.1:9222"
+	browserSettleDelay = 3 * time.Second
 )
 
 const defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
@@ -2806,6 +2814,41 @@ const defaultUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleW
 type Source interface {
 	Name() string
 	Fetch(ctx context.Context) ([]model.RawListing, error)
+}
+
+type PageFetcher interface {
+	FetchPage(ctx context.Context, url string) (string, error)
+}
+
+type BrowserFetcher struct {
+	devtoolsURL string
+	settle      time.Duration
+}
+
+func NewBrowserFetcher(devtoolsURL string) *BrowserFetcher {
+	if devtoolsURL == "" {
+		devtoolsURL = defaultDevtoolsURL
+	}
+	return &BrowserFetcher{devtoolsURL: devtoolsURL, settle: browserSettleDelay}
+}
+
+func (b *BrowserFetcher) FetchPage(ctx context.Context, url string) (string, error) {
+	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, b.devtoolsURL)
+	defer cancelAlloc()
+
+	tabCtx, cancelTab := chromedp.NewContext(allocCtx)
+	defer cancelTab()
+
+	var html string
+	err := chromedp.Run(tabCtx,
+		chromedp.Navigate(url),
+		chromedp.Sleep(b.settle),
+		chromedp.OuterHTML("html", &html),
+	)
+	if err != nil {
+		return "", fmt.Errorf("fetching %s through the browser: %w", url, err)
+	}
+	return html, nil
 }
 ```
 
@@ -3509,20 +3552,23 @@ Expected: PASS
 Adicione ao `internal/config/config.go`, dentro de `Config`:
 
 ```go
-	SourceURLs map[string][]string `yaml:"source_urls"`
+	SourceURLs  map[string][]string `yaml:"source_urls"`
+	DevtoolsURL string              `yaml:"devtools_url"`
 ```
 
 Acrescente ao `config/config.yaml`:
 
 ```yaml
+devtools_url: http://127.0.0.1:9222
+
 source_urls:
   olx:
-    - https://www.olx.com.br/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide
-    - https://www.olx.com.br/motos/estado-sp/sao-paulo-e-regiao?q=harley%20street%20glide
-    - https://www.olx.com.br/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20street%20glide
-    - https://www.olx.com.br/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20road%20glide
-    - https://www.olx.com.br/motos/estado-sp/sao-paulo-e-regiao?q=harley%20road%20glide
-    - https://www.olx.com.br/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20street%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20road%20glide
   mercadolivre:
     - https://lista.mercadolivre.com.br/harley-davidson-street-glide
     - https://lista.mercadolivre.com.br/harley-davidson-road-glide
