@@ -21,12 +21,15 @@ func TestFormatAlertIncludesEssentials(t *testing.T) {
 	}
 	msg := FormatAlert(row)
 
-	for _, want := range []string{"Street Glide", "2015", "72.000", "curitiba", "https://olx.com.br/abc"} {
+	for _, want := range []string{"Street Glide", "2015", "72.000", "curitiba"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message %q is missing %q", msg, want)
 		}
 	}
-	if len(msg) > 320 {
+	if strings.Contains(msg, "https://olx.com.br/abc") {
+		t.Errorf("message %q still carries the url; the transport opens it on click now", msg)
+	}
+	if len(msg) > 160 {
 		t.Errorf("message is %d chars, well past what a notification banner shows before truncating", len(msg))
 	}
 }
@@ -88,7 +91,7 @@ func TestFormatAlertWithoutPriceOrYear(t *testing.T) {
 	if strings.Contains(msg, "  ") {
 		t.Errorf("message %q has a double space left by the absent year", msg)
 	}
-	for _, want := range []string{"Road Glide", "sao paulo/SP", "https://mercadolivre.com.br/xyz"} {
+	for _, want := range []string{"Road Glide", "sao paulo/SP"} {
 		if !strings.Contains(msg, want) {
 			t.Errorf("message %q is missing %q", msg, want)
 		}
@@ -112,9 +115,6 @@ func TestFormatAlertWithoutLocation(t *testing.T) {
 	}
 	if strings.Contains(msg, "- -") {
 		t.Errorf("message %q has an empty field between separators", msg)
-	}
-	if !strings.Contains(msg, "https://olx.com.br/abc") {
-		t.Errorf("message %q lost the url", msg)
 	}
 }
 

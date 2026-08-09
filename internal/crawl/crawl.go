@@ -160,7 +160,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 		if sent >= limit {
 			break
 		}
-		if err := n.Send(ctx, notify.FormatAlert(row)); err != nil {
+		if err := n.Send(ctx, notify.Alert{Message: notify.FormatAlert(row), URL: row.URL}); err != nil {
 			return sent, fmt.Errorf("sending alert for listing %d: %w", row.ID, err)
 		}
 		if err := s.MarkNotified(row.ID); err != nil {

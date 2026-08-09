@@ -8,19 +8,22 @@ import (
 	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
+	"github.com/andreabreu76/harley-hunter/internal/notify"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
 
 type recordingNotifier struct {
 	messages []string
+	alerts   []notify.Alert
 	failAt   int
 }
 
-func (r *recordingNotifier) Send(ctx context.Context, message string) error {
+func (r *recordingNotifier) Send(ctx context.Context, alert notify.Alert) error {
 	if r.failAt > 0 && len(r.messages) == r.failAt-1 {
 		return errors.New("notification refused")
 	}
-	r.messages = append(r.messages, message)
+	r.messages = append(r.messages, alert.Message)
+	r.alerts = append(r.alerts, alert)
 	return nil
 }
 
@@ -262,5 +265,25 @@ func TestNotifyIsQuietWithNothingPending(t *testing.T) {
 	}
 	if sent != 0 || len(n.messages) != 0 {
 		t.Errorf("sent = %d with %d messages, want a silent round", sent, len(n.messages))
+	}
+}
+
+func TestNotifyCarriesTheListingURLOnTheAlert(t *testing.T) {
+	s := openStore(t)
+	l := matchListing("olx-1")
+	l.URL = "https://pr.olx.com.br/regiao-de-curitiba/motos/harley-1509210244"
+	if _, err := s.Upsert(l, time.Now()); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	n := &recordingNotifier{}
+	if _, err := Notify(context.Background(), s, n, 5); err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if len(n.alerts) != 1 {
+		t.Fatalf("got %d alerts, want 1", len(n.alerts))
+	}
+	if n.alerts[0].URL != l.URL {
+		t.Errorf("alert url = %q, want %q so the click opens the listing", n.alerts[0].URL, l.URL)
 	}
 }

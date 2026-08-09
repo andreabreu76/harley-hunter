@@ -3,6 +3,7 @@ package notify
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -21,75 +22,103 @@ func recorder() (*[]recordedCommand, func(ctx context.Context, name string, args
 	}
 }
 
-func scriptFor(t *testing.T, message string) string {
+func sendVia(t *testing.T, binaryPath string, alert Alert) recordedCommand {
 	t.Helper()
 	calls, run := recorder()
 	n := NewMacOS()
+	n.binaryPath = binaryPath
 	n.run = run
 
-	if err := n.Send(context.Background(), message); err != nil {
+	if err := n.Send(context.Background(), alert); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if len(*calls) != 1 {
 		t.Fatalf("ran %d commands, want 1", len(*calls))
 	}
-	c := (*calls)[0]
-	if c.name != "osascript" {
-		t.Errorf("command = %q, want osascript", c.name)
-	}
-	if len(c.args) != 2 || c.args[0] != "-e" {
-		t.Fatalf("args = %q, want -e followed by one script", c.args)
-	}
-	return c.args[1]
+	return (*calls)[0]
 }
 
-func TestMacOSSendBuildsTheNotificationScript(t *testing.T) {
-	got := scriptFor(t, "Harley-Davidson Street Glide 2014 - R$ 72.000 - curitiba/PR [olx] https://olx.com.br/abc")
-
-	want := `display notification "Harley-Davidson Street Glide 2014 - R$ 72.000 - curitiba/PR [olx] https://olx.com.br/abc" with title "Harley Hunter" sound name "Glass"`
-	if got != want {
-		t.Errorf("script =\n%s\nwant\n%s", got, want)
+func TestMacOSSendsThroughTerminalNotifierWhenPresent(t *testing.T) {
+	alert := Alert{
+		Message: "Harley-Davidson Street Glide 2014 - R$ 72.000 - curitiba/PR [olx]",
+		URL:     "https://pr.olx.com.br/regiao-de-curitiba/motos/harley-1509210244",
 	}
-}
+	got := sendVia(t, "/opt/homebrew/bin/terminal-notifier", alert)
 
-func TestMacOSSendEscapesDoubleQuotes(t *testing.T) {
-	got := scriptFor(t, `Harley "Street Glide" 2014`)
-
-	want := `display notification "Harley \"Street Glide\" 2014" with title "Harley Hunter" sound name "Glass"`
-	if got != want {
-		t.Errorf("script =\n%s\nwant\n%s", got, want)
+	if got.name != "/opt/homebrew/bin/terminal-notifier" {
+		t.Errorf("command = %q, want the cached terminal-notifier path", got.name)
+	}
+	want := []string{
+		"-title", "Harley Hunter",
+		"-message", alert.Message,
+		"-open", alert.URL,
+		"-sound", "Glass",
+	}
+	if !reflect.DeepEqual(got.args, want) {
+		t.Errorf("args =\n%q\nwant\n%q", got.args, want)
 	}
 }
 
-func TestMacOSSendEscapesBackslashesBeforeQuotes(t *testing.T) {
-	got := scriptFor(t, `back\slash and "quote"`)
+func TestMacOSPassesTheMessageUntouchedToTerminalNotifier(t *testing.T) {
+	raw := `Harley "Street Glide" 2014 \ back - R$ 72.000`
+	got := sendVia(t, "/opt/homebrew/bin/terminal-notifier", Alert{Message: raw, URL: "https://olx.com.br/abc"})
+
+	for i, a := range got.args {
+		if a == "-message" {
+			if got.args[i+1] != raw {
+				t.Errorf("message = %q, want it verbatim: exec takes an argument vector, so escaping would corrupt it", got.args[i+1])
+			}
+			return
+		}
+	}
+	t.Fatal("no -message argument")
+}
+
+func TestMacOSOmitsOpenWhenTheAlertHasNoURL(t *testing.T) {
+	got := sendVia(t, "/opt/homebrew/bin/terminal-notifier", Alert{Message: "sem link"})
+
+	for _, a := range got.args {
+		if a == "-open" {
+			t.Errorf("args %q pass -open with nothing to open", got.args)
+		}
+	}
+}
+
+func TestMacOSFallsBackToOsascriptWithoutTheBinary(t *testing.T) {
+	got := sendVia(t, "", Alert{Message: "Street Glide 2014", URL: "https://olx.com.br/abc"})
+
+	if got.name != "osascript" {
+		t.Fatalf("command = %q, want osascript as the fallback", got.name)
+	}
+	want := `display notification "Street Glide 2014" with title "Harley Hunter" sound name "Glass"`
+	if len(got.args) != 2 || got.args[0] != "-e" || got.args[1] != want {
+		t.Errorf("args =\n%q\nwant -e followed by\n%s", got.args, want)
+	}
+}
+
+func TestMacOSFallbackStillEscapesTheMessage(t *testing.T) {
+	got := sendVia(t, "", Alert{Message: `back\slash and "quote"`})
 
 	want := `display notification "back\\slash and \"quote\"" with title "Harley Hunter" sound name "Glass"`
-	if got != want {
-		t.Errorf("script =\n%s\nwant\n%s", got, want)
+	if got.args[1] != want {
+		t.Errorf("script =\n%s\nwant\n%s", got.args[1], want)
 	}
 }
 
-func TestMacOSSendKeepsAppleScriptOutOfTheMessage(t *testing.T) {
-	injection := `" & (do shell script "touch /tmp/pwned") & "`
-	got := scriptFor(t, injection)
+func TestMacOSFallbackKeepsAppleScriptOutOfTheMessage(t *testing.T) {
+	got := sendVia(t, "", Alert{Message: `" & (do shell script "touch /tmp/pwned") & "`})
 
-	body := strings.TrimSuffix(strings.TrimPrefix(got, `display notification "`), `" with title "Harley Hunter" sound name "Glass"`)
+	body := strings.TrimSuffix(strings.TrimPrefix(got.args[1], `display notification "`), `" with title "Harley Hunter" sound name "Glass"`)
 	if strings.Contains(strings.ReplaceAll(body, `\"`, ""), `"`) {
 		t.Errorf("body %q still carries an unescaped quote, so the message can close the literal and run code", body)
 	}
 }
 
-func TestMacOSSendFlattensLineBreaks(t *testing.T) {
-	got := scriptFor(t, "first line\nsecond\rthird")
+func TestMacOSFallbackFlattensLineBreaks(t *testing.T) {
+	got := sendVia(t, "", Alert{Message: "first line\nsecond\rthird"})
 
-	if strings.ContainsAny(got, "\n\r") {
-		t.Errorf("script %q carries a raw line break, which osascript rejects as a syntax error", got)
-	}
-	for _, want := range []string{"first line", "second", "third"} {
-		if !strings.Contains(got, want) {
-			t.Errorf("script %q dropped %q", got, want)
-		}
+	if strings.ContainsAny(got.args[1], "\n\r") {
+		t.Errorf("script %q carries a raw line break, which osascript rejects as a syntax error", got.args[1])
 	}
 }
 
@@ -99,9 +128,9 @@ func TestMacOSSendReportsRunnerFailure(t *testing.T) {
 		return errors.New("no gui session")
 	}
 
-	err := n.Send(context.Background(), "teste")
+	err := n.Send(context.Background(), Alert{Message: "teste"})
 	if err == nil {
-		t.Fatal("Send should surface an osascript failure so the round can retry next time")
+		t.Fatal("Send should surface a failure so the round can retry next time")
 	}
 	if !strings.Contains(err.Error(), "no gui session") {
 		t.Errorf("error %q loses the underlying cause", err)
@@ -115,7 +144,7 @@ func TestMacOSSendPassesTheContextThrough(t *testing.T) {
 
 	type key struct{}
 	ctx := context.WithValue(context.Background(), key{}, "carried")
-	if err := n.Send(ctx, "teste"); err != nil {
+	if err := n.Send(ctx, Alert{Message: "teste"}); err != nil {
 		t.Fatalf("Send: %v", err)
 	}
 	if (*calls)[0].ctx.Value(key{}) != "carried" {
@@ -126,5 +155,31 @@ func TestMacOSSendPassesTheContextThrough(t *testing.T) {
 func TestNewMacOSRunsARealCommandByDefault(t *testing.T) {
 	if NewMacOS().run == nil {
 		t.Fatal("NewMacOS must ship a runner, otherwise Send panics outside tests")
+	}
+}
+
+func TestNewMacOSLooksTheBinaryUpOnce(t *testing.T) {
+	lookups := 0
+	n := newMacOS(func(string) (string, error) {
+		lookups++
+		return "/opt/homebrew/bin/terminal-notifier", nil
+	})
+	_, run := recorder()
+	n.run = run
+
+	for i := 0; i < 3; i++ {
+		if err := n.Send(context.Background(), Alert{Message: "teste"}); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+	}
+	if lookups != 1 {
+		t.Errorf("looked the binary up %d times, want 1 cached at construction", lookups)
+	}
+}
+
+func TestNewMacOSFallsBackWhenLookupFails(t *testing.T) {
+	n := newMacOS(func(string) (string, error) { return "", errors.New("not found") })
+	if n.binaryPath != "" {
+		t.Errorf("binaryPath = %q, want empty so Send takes the osascript path", n.binaryPath)
 	}
 }

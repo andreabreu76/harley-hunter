@@ -34,5 +34,5 @@ func FormatAlert(r store.Row) string {
 	if location != "" {
 		fields = append(fields, location)
 	}
-	return fmt.Sprintf("%s [%s] %s", strings.Join(fields, " - "), r.Source, r.URL)
+	return fmt.Sprintf("%s [%s]", strings.Join(fields, " - "), r.Source)
 }
