@@ -4449,6 +4449,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -4470,6 +4471,8 @@ type server struct {
 }
 
 const healthHistoryRuns = 30
+
+var regionPriority = map[string]int{"RJ": 0, "SP": 1, "PR": 2}
 
 type sourceHealth struct {
 	Name   string
@@ -4514,8 +4517,22 @@ func (s *server) list(v model.Verdict, title string) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		sortByRegionPriority(rows)
 		s.render(w, s.listTmpl, map[string]any{"Title": title, "Rows": rows})
 	}
+}
+
+func sortByRegionPriority(rows []store.Row) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		return regionRank(rows[i].State) < regionRank(rows[j].State)
+	})
+}
+
+func regionRank(state string) int {
+	if rank, ok := regionPriority[state]; ok {
+		return rank
+	}
+	return len(regionPriority)
 }
 
 func (s *server) detail(w http.ResponseWriter, r *http.Request) {
@@ -4589,6 +4606,14 @@ func priceDrop(r store.Row) string {
 	return fmt.Sprintf(" (baixou R$ %s)", format.Thousands(diff/100))
 }
 ```
+
+As listas saem ordenadas por prioridade de região — Rio de Janeiro primeiro,
+depois São Paulo, depois Curitiba — preservando a ordem por data dentro de cada
+uma. O Rio é a região de maior interesse e a de estoque mais escasso: numa
+coleta real, todas as Street Glide cariocas eram de 2017 em diante, fora do
+alvo. Quando um anúncio no alvo finalmente aparecer por lá, ele precisa estar no
+topo, não perdido entre os de Curitiba. A ordenação é estável, então nada além
+da região muda de posição.
 
 - [ ] **Step 5: Ligar ao comando `serve`**
 
