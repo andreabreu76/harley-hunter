@@ -445,6 +445,10 @@ func TestParsePrice(t *testing.T) {
 		{"12.000 km", 0, false},
 		{"12 mil km", 0, false},
 		{"42 mil km, valor 74 mil", 7400000, true},
+		{"1 mil curtidas, moto por 74 mil", 7400000, true},
+		{"20 mil seguidores no insta, vendo por 74 mil", 7400000, true},
+		{"3 mil curtidas no post, R$ 74.900", 7490000, true},
+		{"10 mil likes! Road Glide R$ 72.000", 7200000, true},
 		{"12 mil kms", 0, false},
 		{"42 mil kms rodados", 0, false},
 		{"12 mil quilometros", 0, false},
@@ -467,6 +471,21 @@ func TestParsePrice(t *testing.T) {
 Os casos com `km` são o coração deste teste. `ParsePrice` recebe tanto o campo estruturado de preço quanto, como alternativa, o texto livre inteiro do anúncio — que quase sempre menciona quilometragem. Um filtro que simplesmente recusasse qualquer texto contendo "km" quebraria o caso `"Vendo Street Glide 15/15, 42.000 km, R$ 74.900"`, e um filtro ausente transformaria `"12 mil km"` em R$ 12.000. A implementação resolve isso pela ordem de reconhecimento, não por exclusão.
 
 O caso `"negociável"` também é deliberado: é a palavra mais comum em anúncio de moto e não pode ser confundida com preço indisponível.
+
+A ordem de reconhecimento coloca o `R$` explícito primeiro, porque é o marcador
+mais confiável de preço num texto qualquer. Nenhum ramo desiste quando o valor
+sai implausível: a varredura continua para o próximo candidato. Sem isso, uma
+legenda como `"3 mil curtidas no post, R$ 74.900"` travaria no `3 mil`, que é
+baixo demais, e o preço marcado com `R$` nunca seria alcançado.
+
+O filtro de palavras não-monetárias vai além de quilometragem e cobre termos de
+engajamento — curtidas, seguidores, visualizações, likes. O caso que motiva isso
+é o mais perigoso do parser inteiro: `"20 mil seguidores no insta, vendo por
+74 mil"` devolvia R$ 20.000, um preço FABRICADO a partir da contagem de
+seguidores. Vinte mil reais passa no teste de plausibilidade e fica abaixo do
+teto, então o anúncio viraria Match e dispararia SMS por uma moto cujo preço
+real é outro. Como o Instagram é fonte-alvo e legenda de loja cita engajamento o
+tempo todo, o risco é corriqueiro, não hipotético.
 
 A varredura percorre TODAS as ocorrências de milhares em vez de olhar só a
 primeira. Anúncio real escreve `"42 mil km, valor 74 mil"`, com a quilometragem
@@ -586,33 +605,49 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
-		if isMileageWord(m[2]) {
-			continue
-		}
+	if m := priceWithSymbol.FindStringSubmatch(s); m != nil {
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*1000*100 + 0.5))
+			if cents, ok := plausible(int64(value*100 + 0.5)); ok {
+				return cents, true
+			}
 		}
 	}
 
-	if m := priceWithSymbol.FindStringSubmatch(s); m != nil {
+	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
+		if isNonPriceWord(m[2]) {
+			continue
+		}
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*100 + 0.5))
+			if cents, ok := plausible(int64(value*1000*100 + 0.5)); ok {
+				return cents, true
+			}
 		}
 	}
 
 	if m := bareNumber.FindStringSubmatch(s); m != nil {
 		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			return plausible(int64(value*100 + 0.5))
+			if cents, ok := plausible(int64(value*100 + 0.5)); ok {
+				return cents, true
+			}
 		}
 	}
 
 	return 0, false
 }
 
-func isMileageWord(s string) bool {
+var nonPricePrefixes = []string{
+	"km", "quil", "curtid", "seguidor", "visualiza", "like", "view",
+	"inscrit", "comentari", "compartilh", "avalia",
+}
+
+func isNonPriceWord(s string) bool {
 	s = strings.ToLower(s)
-	return strings.HasPrefix(s, "km") || strings.HasPrefix(s, "quil")
+	for _, prefix := range nonPricePrefixes {
+		if strings.HasPrefix(s, prefix) {
+			return true
+		}
+	}
+	return false
 }
 
 func decimalize(s string) string {
