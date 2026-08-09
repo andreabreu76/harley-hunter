@@ -22,4 +22,4 @@ match:
 crawl:
   timeout_seconds: 90
   max_concurrent: 4
-  max_sms_per_run: 5
+  max_alerts_per_run: 5

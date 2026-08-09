@@ -17,9 +17,9 @@ type MatchCriteria struct {
 }
 
 type CrawlSettings struct {
-	TimeoutSeconds int `yaml:"timeout_seconds"`
-	MaxConcurrent  int `yaml:"max_concurrent"`
-	MaxSMSPerRun   int `yaml:"max_sms_per_run"`
+	TimeoutSeconds  int `yaml:"timeout_seconds"`
+	MaxConcurrent   int `yaml:"max_concurrent"`
+	MaxAlertsPerRun int `yaml:"max_alerts_per_run"`
 }
 
 type Config struct {

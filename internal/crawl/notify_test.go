@@ -18,7 +18,7 @@ type recordingNotifier struct {
 
 func (r *recordingNotifier) Send(ctx context.Context, message string) error {
 	if r.failAt > 0 && len(r.messages) == r.failAt-1 {
-		return errors.New("twilio unavailable")
+		return errors.New("notification refused")
 	}
 	r.messages = append(r.messages, message)
 	return nil
@@ -247,8 +247,8 @@ func TestNotifyDefaultsTheCapWhenUnset(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
-	if sent != DefaultSMSPerRun {
-		t.Errorf("sent = %d, want the default cap of %d", sent, DefaultSMSPerRun)
+	if sent != DefaultAlertsPerRun {
+		t.Errorf("sent = %d, want the default cap of %d", sent, DefaultAlertsPerRun)
 	}
 }
 

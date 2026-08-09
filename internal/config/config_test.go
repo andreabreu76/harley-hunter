@@ -57,3 +57,13 @@ func TestLoadRejectsEnabledSourceWithoutURLs(t *testing.T) {
 		t.Fatal("Load should reject an enabled source that has no urls: it would crawl nothing and report success")
 	}
 }
+
+func TestLoadReadsTheAlertCapUnderItsCurrentName(t *testing.T) {
+	cfg, err := Load("testdata/config.yaml")
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.Crawl.MaxAlertsPerRun != 5 {
+		t.Errorf("MaxAlertsPerRun = %d, want 5 from max_alerts_per_run", cfg.Crawl.MaxAlertsPerRun)
+	}
+}

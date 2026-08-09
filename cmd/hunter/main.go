@@ -78,17 +78,12 @@ func runServe(cfg config.Config) error {
 }
 
 func sendAlerts(cfg config.Config, db *store.Store) {
-	notifier, err := notify.NewTwilioFromEnv()
+	shown, err := crawl.Notify(context.Background(), db, notify.NewMacOS(), cfg.Crawl.MaxAlertsPerRun)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "alerts disabled: %v\n", err)
+		fmt.Fprintf(os.Stderr, "alerts failed after %d notifications: %v\n", shown, err)
 		return
 	}
-	sent, err := crawl.Notify(context.Background(), db, notifier, cfg.Crawl.MaxSMSPerRun)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "%s delivery failed after %d messages: %v\n", notifier.Channel(), sent, err)
-		return
-	}
-	fmt.Printf("%s sent: %d\n", notifier.Channel(), sent)
+	fmt.Printf("alerts shown: %d\n", shown)
 }
 
 func buildSources(cfg config.Config) ([]crawl.Source, error) {

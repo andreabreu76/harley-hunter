@@ -45,7 +45,7 @@ func testConfig() config.Config {
 			MaxPriceCents:      7500000,
 			MaybeMaxPriceCents: 8500000,
 		},
-		Crawl: config.CrawlSettings{TimeoutSeconds: 5, MaxConcurrent: 2, MaxSMSPerRun: 5},
+		Crawl: config.CrawlSettings{TimeoutSeconds: 5, MaxConcurrent: 2, MaxAlertsPerRun: 5},
 	}
 }
 

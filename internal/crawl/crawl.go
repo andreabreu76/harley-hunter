@@ -34,7 +34,7 @@ const (
 	defaultConcurrency  = 4
 )
 
-const DefaultSMSPerRun = 5
+const DefaultAlertsPerRun = 5
 
 const pendingOversample = 3
 
@@ -140,7 +140,7 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 
 func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (int, error) {
 	if limit <= 0 {
-		limit = DefaultSMSPerRun
+		limit = DefaultAlertsPerRun
 	}
 	pending, err := s.PendingNotifications(limit * pendingOversample)
 	if err != nil {
