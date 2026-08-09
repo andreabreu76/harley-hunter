@@ -162,9 +162,10 @@ func TestNormalizeIgnoresMoreFiscalYearShapes(t *testing.T) {
 		"Emplacada 2026. Street Glide 2015, Curitiba - PR",
 		"Documentação 2026 em dia. Street Glide 2015, Curitiba - PR",
 		"Documentos 2026 ok. Road Glide 2015, Curitiba - PR",
+		"IPVA 2026 PAGO. VENDO STREET GLIDE 2015, CURITIBA-PR",
 	}
 	for _, text := range cases {
-		t.Run(text[:12], func(t *testing.T) {
+		t.Run(string([]rune(text)[:12]), func(t *testing.T) {
 			l := Normalize(model.RawListing{Source: "instagram", ExternalID: text[:8], RawText: text})
 			if l.Year == nil || *l.Year != 2015 {
 				t.Errorf("Year = %v, want 2015", l.Year)
