@@ -5,13 +5,22 @@ import (
 	"strings"
 )
 
-var segmentSplit = regexp.MustCompile(`[,/()]+|\s+-\s*|\s*-\s+`)
+var (
+	segmentSplit  = regexp.MustCompile(`[,/()]+|\s+-\s*|\s*-\s+`)
+	trailingState = regexp.MustCompile(`(?i)[\s\-]([a-z]{2})\s*$`)
+)
 
 func ParseLocation(s string) (string, string) {
 	if strings.TrimSpace(s) == "" {
 		return "", ""
 	}
-	segments := splitSegments(Fold(s))
+
+	folded := Fold(s)
+	if m := trailingState.FindStringSubmatch(folded); m != nil && isBrazilianState(strings.ToUpper(m[1])) {
+		folded = folded[:len(folded)-len(m[0])] + ", " + m[1]
+	}
+
+	segments := splitSegments(folded)
 	if len(segments) == 0 {
 		return "", ""
 	}
@@ -19,7 +28,10 @@ func ParseLocation(s string) (string, string) {
 	state, stateIndex := findState(segments)
 
 	fallback := ""
-	for _, seg := range segments {
+	for i, seg := range segments {
+		if i == stateIndex {
+			continue
+		}
 		metroState, ok := metroCities[cityKey(seg)]
 		if !ok {
 			continue
@@ -40,13 +52,16 @@ func ParseLocation(s string) (string, string) {
 			return seg, state
 		}
 	}
+	if stateIndex >= 0 {
+		return cityKey(segments[stateIndex]), state
+	}
 	return "", state
 }
 
 func splitSegments(folded string) []string {
 	var out []string
 	for _, seg := range segmentSplit.Split(folded, -1) {
-		if seg = strings.TrimSpace(seg); seg != "" {
+		if seg = strings.Trim(seg, " -"); seg != "" {
 			out = append(out, seg)
 		}
 	}
