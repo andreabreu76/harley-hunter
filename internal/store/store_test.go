@@ -171,3 +171,66 @@ func TestRecentRunCounts(t *testing.T) {
 		t.Errorf("counts = %v, want most recent first starting with 0", counts)
 	}
 }
+
+func TestCountByStateCountsEveryVerdict(t *testing.T) {
+	s := openTemp(t)
+	seed := []struct {
+		id      string
+		state   string
+		verdict model.Verdict
+	}{
+		{"a", "RJ", model.VerdictMatch},
+		{"b", "RJ", model.VerdictReject},
+		{"c", "SP", model.VerdictMaybe},
+		{"d", "", model.VerdictReject},
+	}
+	for _, l := range seed {
+		listing := sample(7200000)
+		listing.ExternalID = l.id
+		listing.State = l.state
+		listing.Verdict = l.verdict
+		if _, err := s.Upsert(listing, time.Now()); err != nil {
+			t.Fatalf("Upsert %s: %v", l.id, err)
+		}
+	}
+
+	counts, err := s.CountByState()
+	if err != nil {
+		t.Fatalf("CountByState: %v", err)
+	}
+	if counts["RJ"] != 2 {
+		t.Errorf("RJ = %d, want 2", counts["RJ"])
+	}
+	if counts["SP"] != 1 {
+		t.Errorf("SP = %d, want 1", counts["SP"])
+	}
+	if counts[""] != 1 {
+		t.Errorf("stateless = %d, want 1", counts[""])
+	}
+}
+
+func TestLastRunAtReturnsTheMostRecentFinish(t *testing.T) {
+	s := openTemp(t)
+	if _, ok, err := s.LastRunAt("olx"); err != nil || ok {
+		t.Fatalf("LastRunAt on an empty store = (%v, %v), want (false, nil)", ok, err)
+	}
+
+	base := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	for i := range 3 {
+		start := base.Add(time.Duration(i) * time.Hour)
+		if err := s.RecordRun("olx", start, start.Add(time.Minute), 10, "ok", ""); err != nil {
+			t.Fatalf("RecordRun: %v", err)
+		}
+	}
+
+	at, ok, err := s.LastRunAt("olx")
+	if err != nil {
+		t.Fatalf("LastRunAt: %v", err)
+	}
+	if !ok {
+		t.Fatal("LastRunAt should find the recorded runs")
+	}
+	if want := base.Add(2*time.Hour + time.Minute); !at.Equal(want) {
+		t.Errorf("LastRunAt = %s, want %s", at, want)
+	}
+}

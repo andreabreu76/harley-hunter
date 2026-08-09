@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
@@ -214,6 +215,39 @@ func (s *Store) RecentRunCounts(source string, limit int) ([]int, error) {
 		counts = append(counts, c)
 	}
 	return counts, rows.Err()
+}
+
+func (s *Store) CountByState() (map[string]int, error) {
+	rows, err := s.db.Query("SELECT state, COUNT(*) FROM listings GROUP BY state")
+	if err != nil {
+		return nil, fmt.Errorf("counting listings by state: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var state string
+		var count int
+		if err := rows.Scan(&state, &count); err != nil {
+			return nil, fmt.Errorf("scanning state count: %w", err)
+		}
+		counts[state] = count
+	}
+	return counts, rows.Err()
+}
+
+func (s *Store) LastRunAt(source string) (time.Time, bool, error) {
+	var at time.Time
+	err := s.db.QueryRow(
+		"SELECT finished_at FROM source_runs WHERE source = ? ORDER BY started_at DESC, id DESC LIMIT 1",
+		source).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("querying last run: %w", err)
+	}
+	return at, true, nil
 }
 
 func collectRows(rows *sql.Rows) ([]Row, error) {

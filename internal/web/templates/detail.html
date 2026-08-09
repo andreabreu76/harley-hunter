@@ -1,38 +1,46 @@
 {{define "content"}}
-<div class="card">
-  {{if .Row.ImageURL}}<img src="{{.Row.ImageURL}}" alt="">{{end}}
-  <div>
-    <div class="price">
-      {{if .Row.PriceCents}}R$ {{money .Row.PriceCents}}{{else}}preço não informado{{end}}
-      {{with priceDrop .Row}}<span class="drop">{{.}}</span>{{end}}
-    </div>
-    <div class="meta">
-      {{if .Row.Year}}{{.Row.Year}} · {{end}}
-      {{if .Row.Km}}{{.Row.Km}} km · {{end}}
-      {{with location .Row}}{{.}} · {{end}}
-      {{.Row.Source}} · {{.Row.UserState}}
-    </div>
-    <p><a href="{{.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio original</a></p>
-    <form method="post" action="/listing/{{.Row.ID}}/state?value=contacted">
-      <button type="submit">marcar como contatado</button>
-    </form>
-    <form method="post" action="/listing/{{.Row.ID}}/state?value=dismissed">
-      <button type="submit">descartar</button>
-    </form>
+<h1 class="detalhe-titulo">{{.Row.Title}}</h1>
+<article class="card">
+  <div class="foto">
+    {{if .Row.ImageURL}}<img src="{{.Row.ImageURL}}" alt="" referrerpolicy="no-referrer" loading="lazy">{{else}}<span class="sem-foto">sem foto</span>{{end}}
   </div>
-</div>
+  <div class="corpo">
+    <div class="meta">
+      {{if .Row.Year}}<span class="num">{{.Row.Year}}</span> · {{end}}
+      {{if .Row.Km}}<span class="num">{{km .Row.Km}}</span> km · {{end}}
+      {{with location .Row}}{{.}} · {{end}}
+      <span class="tag">{{.Row.Source}}</span>
+      {{with stateLabel .Row.UserState}} · {{.}}{{end}}
+    </div>
+    <div class="links"><a href="{{.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio original</a></div>
+    <div class="botoes">
+      <form method="post" action="/listing/{{.Row.ID}}/state?value=contacted">
+        <button type="submit">marcar contatado</button>
+      </form>
+      <form method="post" action="/listing/{{.Row.ID}}/state?value=dismissed">
+        <button type="submit">descartar</button>
+      </form>
+    </div>
+  </div>
+  <div class="gauge">
+    {{if .Row.PriceCents}}
+    <div class="odo"><span class="cifrao">R$</span>{{money .Row.PriceCents}}</div>
+    {{else}}
+    <div class="sem-preco">preço não informado</div>
+    {{end}}
+    {{with priceDrop .Row}}<div class="ticker">{{.}}</div>{{end}}
+  </div>
+</article>
 
-<h2>Histórico de preço</h2>
-{{if not .Points}}<p>Nenhum preço registrado.</p>{{end}}
+<h2 class="secao">Histórico de preço</h2>
 {{if .Points}}
-<table>
+<table class="historico">
   <tr><th>Data</th><th>Preço</th></tr>
   {{range .Points}}
   <tr><td>{{datetime .ObservedAt}}</td><td>R$ {{moneyCents .PriceCents}}</td></tr>
   {{end}}
 </table>
+{{else}}
+<p class="vazio">Nenhum preço registrado.</p>
 {{end}}
-
-<h2>Texto do anúncio</h2>
-<p class="meta">{{.Row.Title}}</p>
 {{end}}

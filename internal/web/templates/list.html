@@ -1,22 +1,42 @@
 {{define "content"}}
-{{if not .Rows}}<p>Nenhum anúncio nesta categoria.</p>{{end}}
-{{range .Rows}}
-<div class="card">
-  {{if .ImageURL}}<img src="{{.ImageURL}}" alt="">{{end}}
-  <div>
-    <a href="/listing/{{.ID}}"><strong>{{.Title}}</strong></a>
-    <div class="price">
-      {{if .PriceCents}}R$ {{money .PriceCents}}{{else}}preço não informado{{end}}
-      {{with priceDrop .}}<span class="drop">{{.}}</span>{{end}}
-    </div>
-    <div class="meta">
-      {{if .Year}}{{.Year}} · {{end}}
-      {{if .Km}}{{.Km}} km · {{end}}
-      {{with location .}}{{.}} · {{end}}
-      {{.Source}} · {{.UserState}}
-    </div>
-    <div class="meta"><a href="{{.URL}}" target="_blank" rel="noreferrer">abrir anúncio</a></div>
+{{$empty := .Empty}}
+{{range .Groups}}
+<section>
+  <div class="regiao">
+    <h2>{{.Name}}</h2>
+    <span class="risco"></span>
+    <span class="avaliados">{{scanned .Scanned}}</span>
   </div>
-</div>
+  {{if not .Rows}}<p class="vazio">{{$empty}}</p>{{end}}
+  {{range .Rows}}
+  <article class="card">
+    <div class="foto">
+      {{if .ImageURL}}<img src="{{.ImageURL}}" alt="" referrerpolicy="no-referrer" loading="lazy">{{else}}<span class="sem-foto">sem foto</span>{{end}}
+    </div>
+    <div class="corpo">
+      <div class="linha-titulo">
+        {{if eq .UserState "new"}}<span class="novo" title="ainda não triado"></span>{{end}}
+        <a class="titulo" href="/listing/{{.ID}}">{{.Title}}</a>
+      </div>
+      <div class="meta">
+        {{if .Year}}<span class="num">{{.Year}}</span> · {{end}}
+        {{if .Km}}<span class="num">{{km .Km}}</span> km · {{end}}
+        {{with location .}}{{.}} · {{end}}
+        <span class="tag">{{.Source}}</span>
+        {{with stateLabel .UserState}} · {{.}}{{end}}
+      </div>
+      <div class="links"><a href="{{.URL}}" target="_blank" rel="noreferrer">abrir anúncio</a></div>
+    </div>
+    <div class="gauge">
+      {{if .PriceCents}}
+      <div class="odo"><span class="cifrao">R$</span>{{money .PriceCents}}</div>
+      {{else}}
+      <div class="sem-preco">preço não informado</div>
+      {{end}}
+      {{with priceDrop .}}<div class="ticker">{{.}}</div>{{end}}
+    </div>
+  </article>
+  {{end}}
+</section>
 {{end}}
 {{end}}
