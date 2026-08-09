@@ -10,6 +10,7 @@ import (
 
 	"github.com/andreabreu76/harley-hunter/internal/config"
 	"github.com/andreabreu76/harley-hunter/internal/crawl"
+	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/notify"
 	"github.com/andreabreu76/harley-hunter/internal/source"
 	"github.com/andreabreu76/harley-hunter/internal/store"
@@ -91,10 +92,12 @@ func buildSources(cfg config.Config) ([]crawl.Source, error) {
 	sources := make([]crawl.Source, 0, len(cfg.Sources))
 	for _, name := range cfg.Sources {
 		switch name {
-		case "olx":
+		case model.SourceOLX:
 			sources = append(sources, source.NewOLX(fetcher, cfg.SourceURLs[name]))
-		case "mercadolivre":
+		case model.SourceMercadoLivre:
 			sources = append(sources, source.NewMercadoLivre(fetcher, cfg.SourceURLs[name]))
+		case model.SourceWebmotors:
+			sources = append(sources, source.NewWebmotors(fetcher, cfg.SourceURLs[name]))
 		default:
 			return nil, fmt.Errorf("unknown source in config: %s", name)
 		}

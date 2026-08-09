@@ -2,6 +2,7 @@ database_path: ../hunter.db
 sources:
   - olx
   - mercadolivre
+  - webmotors
 devtools_url: http://127.0.0.1:9222
 source_urls:
   olx:
@@ -14,6 +15,13 @@ source_urls:
   mercadolivre:
     - https://lista.mercadolivre.com.br/harley-davidson-street-glide
     - https://lista.mercadolivre.com.br/harley-davidson-road-glide
+  webmotors:
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fpr%3Ftipoveiculo%3Dmotos%26estadocidade%3DParan%25C3%25A1%26marca1%3Dharley-davidson%26modelo1%3Dstreet-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fsp%3Ftipoveiculo%3Dmotos%26estadocidade%3DS%25C3%25A3o%2520Paulo%26marca1%3Dharley-davidson%26modelo1%3Dstreet-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Frj%3Ftipoveiculo%3Dmotos%26estadocidade%3DRio%2520de%2520Janeiro%26marca1%3Dharley-davidson%26modelo1%3Dstreet-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fpr%3Ftipoveiculo%3Dmotos%26estadocidade%3DParan%25C3%25A1%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fsp%3Ftipoveiculo%3Dmotos%26estadocidade%3DS%25C3%25A3o%2520Paulo%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Frj%3Ftipoveiculo%3Dmotos%26estadocidade%3DRio%2520de%2520Janeiro%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
 match:
   years: [2014, 2015]
   maybe_years: [2013, 2016]
