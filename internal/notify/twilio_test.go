@@ -35,6 +35,30 @@ func TestFormatAlertIncludesEssentials(t *testing.T) {
 	}
 }
 
+const gsm7Alphabet = "@£$¥èéùìòÇ\nØø\rÅåΔ_ΦΓΛΩΠΨΣΘΞÆæßÉ !\"#¤%&'()*+,-./0123456789:;<=>?¡" +
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZÄÖÑÜ§¿abcdefghijklmnopqrstuvwxyzäöñüà^{}\\[~]|€"
+
+func TestFormatAlertStaysInTheGSM7Alphabet(t *testing.T) {
+	year := 2014
+	cents := int64(7190000)
+	row := store.Row{
+		Title:      "HARLEY DAVDSON FLHX STREET GLIDE AZUL -2014 90.195Km",
+		Year:       &year,
+		PriceCents: &cents,
+		City:       "curitiba",
+		State:      "PR",
+		URL:        "https://pr.olx.com.br/regiao-de-curitiba-e-paranagua/autos-e-pecas/motos/harley-1518392408",
+		Source:     "olx",
+	}
+	msg := FormatAlert(row)
+
+	for _, r := range msg {
+		if !strings.ContainsRune(gsm7Alphabet, r) {
+			t.Errorf("message %q carries %q, outside GSM-7, which forces every segment into UCS-2", msg, r)
+		}
+	}
+}
+
 func TestFormatAlertDoesNotRepeatAYearAlreadyInTheTitle(t *testing.T) {
 	year := 2014
 	cents := int64(7200000)
@@ -114,7 +138,7 @@ func TestFormatAlertWithoutLocation(t *testing.T) {
 	if strings.Contains(msg, "  ") {
 		t.Errorf("message %q has a blank gap left by the absent location", msg)
 	}
-	if strings.Contains(msg, "— —") {
+	if strings.Contains(msg, "- -") {
 		t.Errorf("message %q has an empty field between separators", msg)
 	}
 	if !strings.Contains(msg, "https://olx.com.br/abc") {

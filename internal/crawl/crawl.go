@@ -36,6 +36,8 @@ const (
 
 const DefaultSMSPerRun = 5
 
+const pendingOversample = 3
+
 type Source interface {
 	Name() string
 	Fetch(ctx context.Context) ([]model.RawListing, error)
@@ -140,7 +142,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 	if limit <= 0 {
 		limit = DefaultSMSPerRun
 	}
-	pending, err := s.PendingNotifications(limit)
+	pending, err := s.PendingNotifications(limit * pendingOversample)
 	if err != nil {
 		return 0, err
 	}
@@ -148,11 +150,15 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 	sent := 0
 	seen := make(map[string]bool, len(pending))
 	for _, row := range pending {
-		if row.Fingerprint != "" && seen[row.Fingerprint] {
+		key, dedupable := dedupKey(row)
+		if dedupable && seen[key] {
 			if err := s.MarkNotified(row.ID); err != nil {
 				return sent, err
 			}
 			continue
+		}
+		if sent >= limit {
+			break
 		}
 		if err := n.Send(ctx, notify.FormatAlert(row)); err != nil {
 			return sent, fmt.Errorf("sending alert for listing %d: %w", row.ID, err)
@@ -160,12 +166,19 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 		if err := s.MarkNotified(row.ID); err != nil {
 			return sent, err
 		}
-		if row.Fingerprint != "" {
-			seen[row.Fingerprint] = true
+		if dedupable {
+			seen[key] = true
 		}
 		sent++
 	}
 	return sent, nil
+}
+
+func dedupKey(row store.Row) (string, bool) {
+	if row.Fingerprint == "" || row.Km == nil {
+		return "", false
+	}
+	return row.Fingerprint, true
 }
 
 func fetchSafely(ctx context.Context, src Source) (items []model.RawListing, err error) {

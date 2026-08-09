@@ -3,6 +3,7 @@ package crawl
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -38,6 +39,16 @@ func matchListing(id string) model.Listing {
 		State:      "PR",
 		Verdict:    model.VerdictMatch,
 	}
+}
+
+func withKm(l model.Listing, km int) model.Listing {
+	l.Km = &km
+	return l
+}
+
+func withPrice(l model.Listing, cents int64) model.Listing {
+	l.PriceCents = &cents
+	return l
 }
 
 func storeWithMatches(t *testing.T, count int) *store.Store {
@@ -116,15 +127,15 @@ func TestNotifyKeepsDeliveredRowsMarkedAfterAPartialFailure(t *testing.T) {
 func TestNotifyDeduplicatesByFingerprint(t *testing.T) {
 	s := openStore(t)
 
-	olx := matchListing("olx-1")
-	olx.Fingerprint = "street_glide|special|2015|72"
+	olx := withKm(matchListing("olx-1"), 90195)
+	olx.Fingerprint = "b5778ec73e0cac33"
 
-	ml := matchListing("ml-1")
+	ml := withKm(matchListing("ml-1"), 90195)
 	ml.Source = "mercadolivre"
 	ml.Fingerprint = olx.Fingerprint
 
-	other := matchListing("olx-2")
-	other.Fingerprint = "road_glide|base|2014|65"
+	other := withKm(matchListing("olx-2"), 37234)
+	other.Fingerprint = "b469ca445d30ab1c"
 
 	for _, l := range []model.Listing{olx, ml, other} {
 		if _, err := s.Upsert(l, time.Now()); err != nil {
@@ -147,6 +158,71 @@ func TestNotifyDeduplicatesByFingerprint(t *testing.T) {
 	}
 	if len(pending) != 0 {
 		t.Errorf("%d rows left pending, want 0: the duplicate is marked without sending", len(pending))
+	}
+}
+
+func TestNotifyKeepsBothWhenMileageIsUnknown(t *testing.T) {
+	s := openStore(t)
+
+	cheaper := withPrice(matchListing("olx-3"), 7200000)
+	cheaper.Title = "Harley-Davidson Street Glide 2014"
+	cheaper.Fingerprint = "416f75cb1a66a44e"
+
+	dearer := withPrice(matchListing("olx-15"), 7500000)
+	dearer.Title = "Stret glide excelente estado"
+	dearer.Fingerprint = cheaper.Fingerprint
+
+	for _, l := range []model.Listing{cheaper, dearer} {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+	}
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 2 {
+		t.Errorf("sent = %d, want 2: without mileage the fingerprint cannot tell two bikes apart", sent)
+	}
+}
+
+func TestNotifyDedupSkipsDoNotConsumeCapSlots(t *testing.T) {
+	s := openStore(t)
+
+	var listings []model.Listing
+	for i := 0; i < 3; i++ {
+		l := withKm(matchListing(fmt.Sprintf("dup-%d", i)), 90195)
+		l.Fingerprint = "b5778ec73e0cac33"
+		listings = append(listings, l)
+	}
+	for i := 0; i < 5; i++ {
+		l := withKm(matchListing(fmt.Sprintf("uniq-%d", i)), 10000+i)
+		l.Fingerprint = fmt.Sprintf("unique-%d", i)
+		listings = append(listings, l)
+	}
+	for _, l := range listings {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+	}
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 5 {
+		t.Errorf("sent = %d, want 5: the two dedup skips must not eat cap slots", sent)
+	}
+
+	pending, err := s.PendingNotifications(50)
+	if err != nil {
+		t.Fatalf("PendingNotifications: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("%d rows left pending, want 1: 3 duplicates collapse to 1 send, 5 sends spend the cap", len(pending))
 	}
 }
 
