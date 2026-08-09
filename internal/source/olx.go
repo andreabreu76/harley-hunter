@@ -13,9 +13,10 @@ import (
 )
 
 const (
-	olxFlightMarker = "self.__next_f.push("
-	olxAdsMarker    = `"ads":[`
-	olxRequestDelay = 2 * time.Second
+	olxFlightMarker   = "self.__next_f.push("
+	olxAdsMarker      = `"ads":[`
+	olxPromotedMarker = `"topoVipSelection":`
+	olxRequestDelay   = 2 * time.Second
 )
 
 type OLX struct {
@@ -36,6 +37,9 @@ func (o *OLX) Name() string { return "olx" }
 func (o *OLX) Fetch(ctx context.Context) ([]model.RawListing, error) {
 	var all []model.RawListing
 	for i, url := range o.baseURLs {
+		if err := ctx.Err(); err != nil {
+			return all, err
+		}
 		if i > 0 {
 			select {
 			case <-ctx.Done():
@@ -46,7 +50,7 @@ func (o *OLX) Fetch(ctx context.Context) ([]model.RawListing, error) {
 
 		listings, err := o.fetchOne(ctx, url)
 		if err != nil {
-			return nil, err
+			return all, err
 		}
 		all = append(all, listings...)
 	}
@@ -145,23 +149,59 @@ func olxFlightPayload(page string) string {
 }
 
 func olxAds(flight string) ([]olxAd, bool) {
-	var found bool
+	promoted := olxPromotedRanges(flight)
+
 	for offset := 0; ; {
 		at := strings.Index(flight[offset:], olxAdsMarker)
 		if at < 0 {
-			return nil, found
+			return nil, false
 		}
-		offset += at + len(olxAdsMarker) - 1
+		start := offset + at + len(olxAdsMarker) - 1
+		offset = start + 1
 
-		var ads []olxAd
-		if err := json.NewDecoder(strings.NewReader(flight[offset:])).Decode(&ads); err != nil {
+		if within(promoted, start) {
 			continue
 		}
-		found = true
-		if len(ads) > 0 {
-			return ads, true
+
+		var ads []olxAd
+		if err := json.NewDecoder(strings.NewReader(flight[start:])).Decode(&ads); err != nil {
+			continue
+		}
+		return ads, true
+	}
+}
+
+type olxSpan struct {
+	start int
+	end   int
+}
+
+func olxPromotedRanges(flight string) []olxSpan {
+	var spans []olxSpan
+	for offset := 0; ; {
+		at := strings.Index(flight[offset:], olxPromotedMarker)
+		if at < 0 {
+			return spans
+		}
+		start := offset + at + len(olxPromotedMarker)
+		offset = start
+
+		decoder := json.NewDecoder(strings.NewReader(flight[start:]))
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			continue
+		}
+		spans = append(spans, olxSpan{start: start, end: start + int(decoder.InputOffset())})
+	}
+}
+
+func within(spans []olxSpan, at int) bool {
+	for _, s := range spans {
+		if at >= s.start && at < s.end {
+			return true
 		}
 	}
+	return false
 }
 
 func olxLocation(ad olxAd) string {

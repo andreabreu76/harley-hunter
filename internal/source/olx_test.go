@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
@@ -130,6 +131,40 @@ func TestParseOLXFallsBackToTheLocationLabel(t *testing.T) {
 	}
 }
 
+func TestParseOLXIgnoresTheVipSelectionWhenTheSearchIsEmptySynthetic(t *testing.T) {
+	page := olxPage(t, vipFirstFlight(`"ads":[],"searchBoxProps":{"keyword":"harley street glide"}`))
+
+	listings, err := ParseOLX(page)
+	if err != nil {
+		t.Fatalf("ParseOLX: %v", err)
+	}
+	if len(listings) != 0 {
+		t.Fatalf("len(listings) = %d, want 0: the vip selection is not the result set", len(listings))
+	}
+}
+
+func TestParseOLXIgnoresTheVipSelectionWhenTheSearchHasResultsSynthetic(t *testing.T) {
+	results := `"ads":[{"listId":7,"url":"https://olx.test/d/7","subject":"Street Glide"}],"searchBoxProps":{"keyword":"harley street glide"}`
+	page := olxPage(t, vipFirstFlight(results))
+
+	listings, err := ParseOLX(page)
+	if err != nil {
+		t.Fatalf("ParseOLX: %v", err)
+	}
+	if len(listings) != 1 {
+		t.Fatalf("len(listings) = %d, want 1", len(listings))
+	}
+	if got, want := listings[0].ExternalID, "7"; got != want {
+		t.Errorf("ExternalID = %q, want %q: took the vip ad instead of the result", got, want)
+	}
+}
+
+func vipFirstFlight(results string) string {
+	seller := `{"name":"Loja","description":"` + strings.Repeat("x", 4000) + `"}`
+	vip := `"topoVipSelection":{"seller":` + seller + `,"ads":[{"listId":99,"url":"https://olx.test/d/99","subject":"VIP"}]}`
+	return `1b:{` + vip + `,` + results + `}`
+}
+
 func TestParseOLXReturnsNoListingsWhenSearchIsEmpty(t *testing.T) {
 	f, err := os.Open("testdata/olx-search-empty.html")
 	if err != nil {
@@ -210,6 +245,28 @@ func TestOLXFetchStopsOnACancelledContext(t *testing.T) {
 
 	if _, err := o.Fetch(ctx); !errors.Is(err, context.Canceled) {
 		t.Fatalf("Fetch error = %v, want context.Canceled", err)
+	}
+	if len(fetcher.asked) != 0 {
+		t.Errorf("asked for %q, want no request at all on a cancelled context", fetcher.asked)
+	}
+}
+
+func TestOLXFetchKeepsWhatItGatheredWhenAURLFails(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/olx-search.html")
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+
+	fetcher := &fakePageFetcher{page: string(fixture), failOn: "https://olx.test/road"}
+	o := NewOLX(fetcher, []string{"https://olx.test/street", "https://olx.test/road", "https://olx.test/electra"})
+	o.delay = 0
+
+	listings, err := o.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("Fetch should report the failure")
+	}
+	if got, want := len(listings), 42; got != want {
+		t.Fatalf("len(listings) = %d, want %d: the first url's listings are worth keeping", got, want)
 	}
 }
 
