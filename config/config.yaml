@@ -1,4 +1,4 @@
-database_path: hunter.db
+database_path: ../hunter.db
 sources:
   - olx
   - mercadolivre

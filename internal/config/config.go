@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"gopkg.in/yaml.v3"
 )
@@ -39,6 +40,16 @@ func Load(path string) (Config, error) {
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parsing config: %w", err)
+	}
+	if cfg.DatabasePath == "" {
+		return Config{}, fmt.Errorf("config has no database_path: sqlite would open a throwaway database and every round would re-notify the same listings")
+	}
+	if !filepath.IsAbs(cfg.DatabasePath) {
+		dir, err := filepath.Abs(filepath.Dir(path))
+		if err != nil {
+			return Config{}, fmt.Errorf("resolving database_path against the config directory: %w", err)
+		}
+		cfg.DatabasePath = filepath.Join(dir, cfg.DatabasePath)
 	}
 	if len(cfg.Sources) == 0 {
 		return Config{}, fmt.Errorf("config has no sources enabled")

@@ -1,14 +1,42 @@
 package config
 
-import "testing"
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"testing"
+)
+
+func writeConfig(t *testing.T, dir, databasePath string) string {
+	t.Helper()
+	body := fmt.Sprintf(`database_path: %s
+sources:
+  - olx
+source_urls:
+  olx:
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr?q=harley
+match:
+  years: [2014]
+  max_price_cents: 7500000
+`, databasePath)
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+		t.Fatalf("writing config: %v", err)
+	}
+	return path
+}
 
 func TestLoadReadsCriteria(t *testing.T) {
 	cfg, err := Load("testdata/config.yaml")
 	if err != nil {
 		t.Fatalf("Load returned error: %v", err)
 	}
-	if cfg.DatabasePath != "hunter.db" {
-		t.Errorf("DatabasePath = %q, want %q", cfg.DatabasePath, "hunter.db")
+	want, err := filepath.Abs(filepath.Join("testdata", "hunter.db"))
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+	if cfg.DatabasePath != want {
+		t.Errorf("DatabasePath = %q, want %q", cfg.DatabasePath, want)
 	}
 	if len(cfg.Sources) != 2 || cfg.Sources[0] != "olx" {
 		t.Errorf("Sources = %v, want [olx mercadolivre]", cfg.Sources)
@@ -55,6 +83,43 @@ func TestLoadReadsSourceURLsAndDevtoolsURL(t *testing.T) {
 func TestLoadRejectsEnabledSourceWithoutURLs(t *testing.T) {
 	if _, err := Load("testdata/no-urls.yaml"); err == nil {
 		t.Fatal("Load should reject an enabled source that has no urls: it would crawl nothing and report success")
+	}
+}
+
+func TestLoadRejectsAnEmptyDatabasePath(t *testing.T) {
+	if _, err := Load("testdata/no-database.yaml"); err == nil {
+		t.Fatal("Load should reject a config without database_path: sqlite opens a throwaway database and every round re-notifies the same bikes")
+	}
+}
+
+func TestLoadResolvesARelativeDatabasePathAgainstTheConfigDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path := writeConfig(t, dir, "hunter.db")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if !filepath.IsAbs(cfg.DatabasePath) {
+		t.Fatalf("DatabasePath = %q, want an absolute path so the cwd cannot swap the database", cfg.DatabasePath)
+	}
+	want := filepath.Join(dir, "hunter.db")
+	if cfg.DatabasePath != want {
+		t.Errorf("DatabasePath = %q, want %q", cfg.DatabasePath, want)
+	}
+}
+
+func TestLoadKeepsAnAbsoluteDatabasePathUntouched(t *testing.T) {
+	dir := t.TempDir()
+	absolute := filepath.Join(dir, "elsewhere", "hunter.db")
+	path := writeConfig(t, dir, absolute)
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load returned error: %v", err)
+	}
+	if cfg.DatabasePath != absolute {
+		t.Errorf("DatabasePath = %q, want %q untouched", cfg.DatabasePath, absolute)
 	}
 }
 
