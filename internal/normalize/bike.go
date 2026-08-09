@@ -8,6 +8,8 @@ import (
 	"golang.org/x/text/unicode/norm"
 )
 
+var compactor = strings.NewReplacer(" ", "", "-", "", ".", "", "/", "")
+
 func Fold(s string) string {
 	decomposed := norm.NFD.String(strings.ToLower(s))
 	var b strings.Builder
@@ -22,7 +24,7 @@ func Fold(s string) string {
 
 func DetectBike(text string) (string, string) {
 	t := Fold(text)
-	compact := strings.ReplaceAll(t, " ", "")
+	compact := compactor.Replace(t)
 
 	switch {
 	case containsAny(t, compact, "electra glide", "electraglide", "flht"):
@@ -31,7 +33,7 @@ func DetectBike(text string) (string, string) {
 		return model.BikeRoadGlide, detectVariant(t, compact, "fltrxse", "fltrxs")
 	case containsAny(t, compact, "street glide", "streetglide", "stglide", "flhx"):
 		return model.BikeStreetGlide, detectVariant(t, compact, "flhxse", "flhxs")
-	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic", "flhtk"):
+	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic"):
 		return model.BikeUltra, model.VariantUnknown
 	case isHarley(t) && containsAny(t, compact, "touring", "1690", "1745", "rushmore"):
 		return model.BikeTouringUnknown, model.VariantUnknown

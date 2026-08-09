@@ -26,6 +26,10 @@ func TestDetectBike(t *testing.T) {
 		{"Harley Davidson Touring 1690 2015", model.BikeTouringUnknown, model.VariantUnknown},
 		{"Honda Gold Wing 2015", model.BikeOther, model.VariantUnknown},
 		{"Harley Davidson Iron 883", model.BikeOther, model.VariantUnknown},
+		{"harley-davidson street-glide 2015", model.BikeStreetGlide, model.VariantBase},
+		{"Harley-Davidson Road-Glide Special 2015", model.BikeRoadGlide, model.VariantSpecial},
+		{"H-D Street Glide 2014", model.BikeStreetGlide, model.VariantBase},
+		{"Harley-Davidson Electra-Glide 2015", model.BikeElectraGlide, model.VariantUnknown},
 	}
 	for _, c := range cases {
 		t.Run(c.in, func(t *testing.T) {
