@@ -63,15 +63,15 @@ func runCrawl(cfg config.Config) error {
 func sendAlerts(cfg config.Config, db *store.Store) {
 	notifier, err := notify.NewTwilioFromEnv()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "sms disabled: %v\n", err)
+		fmt.Fprintf(os.Stderr, "alerts disabled: %v\n", err)
 		return
 	}
 	sent, err := crawl.Notify(context.Background(), db, notifier, cfg.Crawl.MaxSMSPerRun)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "sms delivery failed after %d messages: %v\n", sent, err)
+		fmt.Fprintf(os.Stderr, "%s delivery failed after %d messages: %v\n", notifier.Channel(), sent, err)
 		return
 	}
-	fmt.Printf("sms sent: %d\n", sent)
+	fmt.Printf("%s sent: %d\n", notifier.Channel(), sent)
 }
 
 func buildSources(cfg config.Config) ([]crawl.Source, error) {

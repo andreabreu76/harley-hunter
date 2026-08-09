@@ -15,8 +15,16 @@ import (
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
 
+const (
+	ChannelWhatsApp = "whatsapp"
+	ChannelSMS      = "sms"
+)
+
+const whatsAppPrefix = "whatsapp:"
+
 type Twilio struct {
 	endpoint string
+	channel  string
 	sid      string
 	token    string
 	from     string
@@ -25,13 +33,27 @@ type Twilio struct {
 }
 
 func NewTwilioFromEnv() (*Twilio, error) {
+	channel := strings.ToLower(strings.TrimSpace(os.Getenv("ALERT_CHANNEL")))
+	if channel == "" {
+		channel = ChannelWhatsApp
+	}
+
 	sid := os.Getenv("TWILIO_ACCOUNT_SID")
 	token := os.Getenv("TWILIO_AUTH_TOKEN")
-	from := os.Getenv("TWILIO_PHONE_NUMBER")
-	if from == "" {
-		from = os.Getenv("TWILIO_FROM")
-	}
 	to := os.Getenv("ALERT_TO")
+
+	var from, fromName string
+	switch channel {
+	case ChannelWhatsApp:
+		from, fromName = os.Getenv("TWILIO_WHATSAPP_FROM"), "TWILIO_WHATSAPP_FROM"
+	case ChannelSMS:
+		from, fromName = os.Getenv("TWILIO_PHONE_NUMBER"), "TWILIO_PHONE_NUMBER"
+		if strings.TrimSpace(from) == "" {
+			from = os.Getenv("TWILIO_FROM")
+		}
+	default:
+		return nil, fmt.Errorf("ALERT_CHANNEL %q is not deliverable: use %q or %q", channel, ChannelWhatsApp, ChannelSMS)
+	}
 
 	required := []struct {
 		name  string
@@ -39,7 +61,7 @@ func NewTwilioFromEnv() (*Twilio, error) {
 	}{
 		{"TWILIO_ACCOUNT_SID", sid},
 		{"TWILIO_AUTH_TOKEN", token},
-		{"TWILIO_PHONE_NUMBER", from},
+		{fromName, from},
 		{"ALERT_TO", to},
 	}
 	var missing []string
@@ -49,17 +71,34 @@ func NewTwilioFromEnv() (*Twilio, error) {
 		}
 	}
 	if len(missing) > 0 {
-		return nil, fmt.Errorf("missing environment variables: %s", strings.Join(missing, ", "))
+		return nil, fmt.Errorf("missing environment variables for the %s channel: %s", channel, strings.Join(missing, ", "))
+	}
+
+	from, to = strings.TrimSpace(from), strings.TrimSpace(to)
+	if channel == ChannelWhatsApp {
+		from, to = withWhatsAppPrefix(from), withWhatsAppPrefix(to)
 	}
 
 	return &Twilio{
 		endpoint: fmt.Sprintf("https://api.twilio.com/2010-04-01/Accounts/%s/Messages.json", url.PathEscape(sid)),
+		channel:  channel,
 		sid:      sid,
 		token:    token,
 		from:     from,
 		to:       to,
 		client:   &http.Client{Timeout: 20 * time.Second},
 	}, nil
+}
+
+func withWhatsAppPrefix(number string) string {
+	if strings.HasPrefix(number, whatsAppPrefix) {
+		return number
+	}
+	return whatsAppPrefix + number
+}
+
+func (t *Twilio) Channel() string {
+	return t.channel
 }
 
 func (t *Twilio) Send(ctx context.Context, message string) error {

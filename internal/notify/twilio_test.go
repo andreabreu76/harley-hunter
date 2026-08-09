@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -251,18 +252,151 @@ func TestTwilioSendDoesNotLeakTokenInError(t *testing.T) {
 	}
 }
 
+func setCredentials(t *testing.T) {
+	t.Helper()
+	t.Setenv("TWILIO_ACCOUNT_SID", "AC0000")
+	t.Setenv("TWILIO_AUTH_TOKEN", "token")
+	t.Setenv("TWILIO_PHONE_NUMBER", "+15550001111")
+	t.Setenv("TWILIO_FROM", "")
+	t.Setenv("TWILIO_WHATSAPP_FROM", "+14155238886")
+	t.Setenv("ALERT_TO", "+5541999999999")
+	t.Setenv("ALERT_CHANNEL", "")
+}
+
+func capturedForm(t *testing.T, configure func()) url.Values {
+	t.Helper()
+	var got url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseForm(); err != nil {
+			t.Errorf("ParseForm: %v", err)
+		}
+		got = r.Form
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer server.Close()
+
+	configure()
+	tw, err := NewTwilioFromEnv()
+	if err != nil {
+		t.Fatalf("NewTwilioFromEnv: %v", err)
+	}
+	tw.endpoint = server.URL
+	tw.client = server.Client()
+	if err := tw.Send(context.Background(), "teste"); err != nil {
+		t.Fatalf("Send: %v", err)
+	}
+	return got
+}
+
+func TestNewTwilioFromEnvDefaultsToWhatsApp(t *testing.T) {
+	setCredentials(t)
+
+	tw, err := NewTwilioFromEnv()
+	if err != nil {
+		t.Fatalf("NewTwilioFromEnv: %v", err)
+	}
+	if tw.Channel() != ChannelWhatsApp {
+		t.Errorf("channel = %q, want %q when ALERT_CHANNEL is unset", tw.Channel(), ChannelWhatsApp)
+	}
+}
+
+func TestTwilioSendPrefixesWhatsAppNumbers(t *testing.T) {
+	form := capturedForm(t, func() { setCredentials(t) })
+
+	if form.Get("From") != "whatsapp:+14155238886" {
+		t.Errorf("From = %q, want the whatsapp sender prefixed", form.Get("From"))
+	}
+	if form.Get("To") != "whatsapp:+5541999999999" {
+		t.Errorf("To = %q, want the destination prefixed", form.Get("To"))
+	}
+}
+
+func TestTwilioSendKeepsBareNumbersOnSMS(t *testing.T) {
+	form := capturedForm(t, func() {
+		setCredentials(t)
+		t.Setenv("ALERT_CHANNEL", "sms")
+	})
+
+	if form.Get("From") != "+15550001111" {
+		t.Errorf("From = %q, want the bare phone number on sms", form.Get("From"))
+	}
+	if form.Get("To") != "+5541999999999" {
+		t.Errorf("To = %q, want the bare destination on sms", form.Get("To"))
+	}
+}
+
+func TestNewTwilioFromEnvDoesNotDoublePrefix(t *testing.T) {
+	form := capturedForm(t, func() {
+		setCredentials(t)
+		t.Setenv("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
+		t.Setenv("ALERT_TO", "whatsapp:+5541999999999")
+	})
+
+	if form.Get("From") != "whatsapp:+14155238886" {
+		t.Errorf("From = %q, want a single whatsapp prefix", form.Get("From"))
+	}
+	if form.Get("To") != "whatsapp:+5541999999999" {
+		t.Errorf("To = %q, want a single whatsapp prefix", form.Get("To"))
+	}
+}
+
+func TestNewTwilioFromEnvNamesTheWhatsAppSenderWhenMissing(t *testing.T) {
+	setCredentials(t)
+	t.Setenv("TWILIO_WHATSAPP_FROM", "")
+
+	_, err := NewTwilioFromEnv()
+	if err == nil {
+		t.Fatal("NewTwilioFromEnv should fail without a whatsapp sender")
+	}
+	if !strings.Contains(err.Error(), "TWILIO_WHATSAPP_FROM") {
+		t.Errorf("error %q does not name the variable the whatsapp channel needs", err)
+	}
+	if strings.Contains(err.Error(), "TWILIO_PHONE_NUMBER") {
+		t.Errorf("error %q blames a variable the whatsapp channel does not use", err)
+	}
+}
+
+func TestNewTwilioFromEnvNamesThePhoneSenderWhenMissingOnSMS(t *testing.T) {
+	setCredentials(t)
+	t.Setenv("ALERT_CHANNEL", "sms")
+	t.Setenv("TWILIO_PHONE_NUMBER", "")
+	t.Setenv("TWILIO_WHATSAPP_FROM", "")
+
+	_, err := NewTwilioFromEnv()
+	if err == nil {
+		t.Fatal("NewTwilioFromEnv should fail without an sms sender")
+	}
+	if !strings.Contains(err.Error(), "TWILIO_PHONE_NUMBER") {
+		t.Errorf("error %q does not name the variable the sms channel needs", err)
+	}
+	if strings.Contains(err.Error(), "TWILIO_WHATSAPP_FROM") {
+		t.Errorf("error %q blames a variable the sms channel does not use", err)
+	}
+}
+
+func TestNewTwilioFromEnvRejectsAnUnknownChannel(t *testing.T) {
+	setCredentials(t)
+	t.Setenv("ALERT_CHANNEL", "telegram")
+
+	if _, err := NewTwilioFromEnv(); err == nil {
+		t.Fatal("NewTwilioFromEnv should reject a channel it cannot deliver")
+	} else if !strings.Contains(err.Error(), "telegram") {
+		t.Errorf("error %q does not quote the unusable channel", err)
+	}
+}
+
 func TestNewTwilioFromEnvListsEveryMissingVariable(t *testing.T) {
 	t.Setenv("TWILIO_ACCOUNT_SID", "")
 	t.Setenv("TWILIO_AUTH_TOKEN", "")
-	t.Setenv("TWILIO_PHONE_NUMBER", "")
-	t.Setenv("TWILIO_FROM", "")
+	t.Setenv("TWILIO_WHATSAPP_FROM", "")
 	t.Setenv("ALERT_TO", "")
+	t.Setenv("ALERT_CHANNEL", "")
 
 	_, err := NewTwilioFromEnv()
 	if err == nil {
 		t.Fatal("NewTwilioFromEnv should fail when nothing is configured")
 	}
-	for _, want := range []string{"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER", "ALERT_TO"} {
+	for _, want := range []string{"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_WHATSAPP_FROM", "ALERT_TO"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %q", err, want)
 		}
@@ -270,11 +404,10 @@ func TestNewTwilioFromEnvListsEveryMissingVariable(t *testing.T) {
 }
 
 func TestNewTwilioFromEnvAcceptsTwilioFromFallback(t *testing.T) {
-	t.Setenv("TWILIO_ACCOUNT_SID", "AC0000")
-	t.Setenv("TWILIO_AUTH_TOKEN", "token")
+	setCredentials(t)
+	t.Setenv("ALERT_CHANNEL", "sms")
 	t.Setenv("TWILIO_PHONE_NUMBER", "")
 	t.Setenv("TWILIO_FROM", "+15550001111")
-	t.Setenv("ALERT_TO", "+5541999999999")
 
 	tw, err := NewTwilioFromEnv()
 	if err != nil {
