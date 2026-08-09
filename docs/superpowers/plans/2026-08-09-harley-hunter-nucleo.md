@@ -449,6 +449,10 @@ func TestParsePrice(t *testing.T) {
 		{"20 mil seguidores no insta, vendo por 74 mil", 7400000, true},
 		{"3 mil curtidas no post, R$ 74.900", 7490000, true},
 		{"10 mil likes! Road Glide R$ 72.000", 7200000, true},
+		{"20 mil comentários, moto por 74 mil", 7400000, true},
+		{"Entrada de R$ 20.000, moto R$ 74.900", 7490000, true},
+		{"R$ 74.900, aceito entrada de R$ 20.000", 7490000, true},
+		{"Parcelas de R$ 1.800, valor total R$ 74.900", 7490000, true},
 		{"12 mil kms", 0, false},
 		{"42 mil kms rodados", 0, false},
 		{"12 mil quilometros", 0, false},
@@ -477,6 +481,21 @@ mais confiável de preço num texto qualquer. Nenhum ramo desiste quando o valor
 sai implausível: a varredura continua para o próximo candidato. Sem isso, uma
 legenda como `"3 mil curtidas no post, R$ 74.900"` travaria no `3 mil`, que é
 baixo demais, e o preço marcado com `R$` nunca seria alcançado.
+
+Entre vários valores marcados com `R$`, vence o MAIOR plausível. Anúncio de moto
+financiada cita entrada e parcela ao lado do preço — `"Entrada de R$ 20.000,
+moto R$ 74.900"` e `"Parcelas de R$ 1.800, valor total R$ 74.900"` — e a entrada
+é sempre menor que o valor da moto. Pegar a primeira ocorrência devolveria a
+entrada, um preço baixo e falso que passaria por Match. A regra falha só no
+formato promocional `"De R$ 82.000 por R$ 74.900"`, onde devolve o preço antigo;
+o dano ali é contido, porque o valor mais alto tende a estourar o teto e o
+anúncio cai em Talvez em vez de virar alerta falso.
+
+Os prefixos da lista precisam corresponder ao que o grupo `([a-z]*)` de fato
+captura, e ele para no acento. `"comentários"` é capturado como `coment`, então
+o prefixo listado tem de ser `coment` e não `comentari` — a forma mais longa
+nunca casaria. Pelo mesmo motivo `visualiza`, `avalia` e `quil` funcionam:
+todos param antes do acento da palavra real.
 
 O filtro de palavras não-monetárias vai além de quilometragem e cobre termos de
 engajamento — curtidas, seguidores, visualizações, likes. O caso que motiva isso
@@ -605,12 +624,18 @@ func ParsePrice(s string) (int64, bool) {
 		return 0, false
 	}
 
-	if m := priceWithSymbol.FindStringSubmatch(s); m != nil {
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
-			if cents, ok := plausible(int64(value*100 + 0.5)); ok {
-				return cents, true
-			}
+	best := int64(0)
+	for _, m := range priceWithSymbol.FindAllStringSubmatch(s, -1) {
+		value, err := strconv.ParseFloat(decimalize(m[1]), 64)
+		if err != nil {
+			continue
 		}
+		if cents, ok := plausible(int64(value*100 + 0.5)); ok && cents > best {
+			best = cents
+		}
+	}
+	if best > 0 {
+		return best, true
 	}
 
 	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
@@ -637,7 +662,7 @@ func ParsePrice(s string) (int64, bool) {
 
 var nonPricePrefixes = []string{
 	"km", "quil", "curtid", "seguidor", "visualiza", "like", "view",
-	"inscrit", "comentari", "compartilh", "avalia",
+	"inscrit", "coment", "compartilh", "avalia",
 }
 
 func isNonPriceWord(s string) bool {
