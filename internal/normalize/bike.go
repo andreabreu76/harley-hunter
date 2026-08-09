@@ -43,10 +43,10 @@ func DetectBike(text string) (string, string) {
 }
 
 func detectVariant(t, compact, cvoCode, specialCode string) string {
-	if containsAny(t, compact, "cvo", cvoCode) {
+	if strings.Contains(t, "cvo") || strings.Contains(t, cvoCode) {
 		return model.VariantCVO
 	}
-	if containsAny(t, compact, "special", "especial", specialCode) {
+	if containsAny(t, compact, "special", "especial") || strings.Contains(t, specialCode) {
 		return model.VariantSpecial
 	}
 	return model.VariantBase

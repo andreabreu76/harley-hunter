@@ -47,6 +47,18 @@ func ParseLocation(s string) (string, string) {
 		return fallback, state
 	}
 
+	for i, seg := range segments {
+		if i == stateIndex {
+			continue
+		}
+		if city, embedded := locationFromText(seg); city != "" {
+			if state == "" {
+				state = embedded
+			}
+			return city, state
+		}
+	}
+
 	start := len(segments) - 1
 	if stateIndex >= 0 {
 		start = stateIndex - 1
