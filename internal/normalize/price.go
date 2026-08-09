@@ -40,11 +40,11 @@ func ParsePrice(s string) (int64, bool) {
 		}
 	}
 
-	for _, m := range thousandsSuffix.FindAllStringSubmatch(s, -1) {
-		if isNonPriceWord(m[2]) {
+	for _, loc := range thousandsSuffix.FindAllStringSubmatchIndex(s, -1) {
+		if precededByCeilingMarker(s, loc[0]) || isNonPriceWord(s[loc[4]:loc[5]]) {
 			continue
 		}
-		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
+		if value, err := strconv.ParseFloat(decimalize(s[loc[2]:loc[3]]), 64); err == nil {
 			consider(int64(value*1000*100 + 0.5))
 		}
 	}
