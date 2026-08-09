@@ -4561,6 +4561,9 @@ set -euo pipefail
 
 PROJECT_DIR="$HOME/src/github.com/andreabreu76/harley-hunter"
 ENV_FILE="$PROJECT_DIR/.env"
+CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+CHROME_PROFILE="$HOME/Library/Application Support/harley-hunter-chrome"
+DEVTOOLS_PORT=9222
 
 if [ -f "$ENV_FILE" ]; then
   set -a
@@ -4568,9 +4571,40 @@ if [ -f "$ENV_FILE" ]; then
   set +a
 fi
 
+if ! curl -sf -o /dev/null "http://127.0.0.1:${DEVTOOLS_PORT}/json/version"; then
+  "$CHROME" \
+    --remote-debugging-port="${DEVTOOLS_PORT}" \
+    --user-data-dir="$CHROME_PROFILE" \
+    --no-first-run \
+    --no-default-browser-check \
+    --window-position=-32000,-32000 \
+    --window-size=1280,900 \
+    about:blank >/dev/null 2>&1 &
+
+  for _ in $(seq 1 30); do
+    curl -sf -o /dev/null "http://127.0.0.1:${DEVTOOLS_PORT}/json/version" && break
+    sleep 1
+  done
+fi
+
 cd "$PROJECT_DIR"
 exec "$HOME/bin/hunter" -config config/config.yaml crawl
 ```
+
+O Chrome da coleta é uma instância DEDICADA, com `--user-data-dir` próprio, e
+nunca o navegador de uso diário. São duas razões independentes. A primeira é
+segurança de sessão: a coleta abre e fecha abas por conta própria, e durante o
+desenvolvimento houve um episódio, não reproduzido, em que todas as abas do
+navegador sumiram — não vale arriscar as abas de trabalho de alguém por causa de
+um robô que roda a cada duas horas. A segunda é que a fase 2 vai precisar de uma
+sessão logada em Instagram e Facebook, e essa sessão deve viver num perfil
+separado do pessoal.
+
+A janela é posicionada fora da tela em vez de rodar em modo headless: o
+Cloudflare bloqueia headless, que foi justamente o que motivou usar o navegador
+real. O script não encerra o Chrome ao terminar — deixá-lo vivo evita pagar a
+inicialização a cada coleta, e o `curl` no início reaproveita a instância que já
+estiver de pé.
 
 ```bash
 chmod +x deploy/hunter-crawl.sh
