@@ -2635,6 +2635,27 @@ o dashboard são processos distintos sobre o mesmo arquivo: sem WAL, uma escrita
 bloqueia toda leitura, e sem `busy_timeout` a escrita concorrente recebe
 `SQLITE_BUSY` de imediato em vez de esperar sua vez.
 
+O WAL cumpre o que promete — com uma transação de escrita aberta, a leitura do
+outro processo retorna na hora. O `busy_timeout` sozinho **não**: ele não vale
+para o `Upsert`, que é justamente a escrita que importa. O `Upsert` abre a
+transação, faz o `SELECT` que procura o anúncio e só então grava. Uma transação
+que começa lendo pega um snapshot de leitura, e subir de leitura para escrita
+com outro escritor no caminho é a única situação em que o SQLite **não** chama o
+busy handler: esperar ali poderia travar os dois lados, então ele devolve
+`SQLITE_BUSY` na hora. Medido: o escritor concorrente falhava em 0s, com os
+5000ms configurados sem efeito nenhum.
+
+Por isso o DSN também leva `_txlock=immediate`, que faz o `BEGIN` já tomar o
+lock de escrita, antes de qualquer leitura. Aí não há upgrade, o busy handler
+entra e o escritor espera. Com a correção, o mesmo teste espera e conclui sem
+erro quando o lock é liberado.
+
+O alcance é pequeno de propósito: `db.Begin()` aparece num único lugar no
+pacote, o `Upsert`. As consultas de leitura usam `db.Query`/`db.QueryRow` direto,
+sem transação, então continuam entrando em paralelo pelo WAL. `busy_timeout`
+segue necessário para as escritas avulsas — `MarkNotified`, `SetUserState`,
+`RecordRun` — que são `db.Exec` sem transação e onde o busy handler já valia.
+
 - [ ] **Step 7: Commit**
 
 ```bash
