@@ -1,0 +1,68 @@
+package normalize
+
+import (
+	"regexp"
+	"strconv"
+	"strings"
+)
+
+const (
+	minPlausiblePriceCents = 500000
+	maxPlausiblePriceCents = 50000000
+)
+
+var (
+	unavailablePrice = regexp.MustCompile(`(?i)combinar|consulte|sob\s+consulta`)
+	thousandsSuffix  = regexp.MustCompile(`(?i)([\d.,]+)\s*mil\s*([a-z]*)`)
+	priceWithSymbol  = regexp.MustCompile(`(?i)r\$\s*([\d.,]+)`)
+	bareNumber       = regexp.MustCompile(`^\s*([\d.,]+)\s*$`)
+)
+
+func ParsePrice(s string) (int64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || unavailablePrice.MatchString(s) {
+		return 0, false
+	}
+
+	if m := thousandsSuffix.FindStringSubmatch(s); m != nil && !strings.EqualFold(m[2], "km") {
+		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
+			return plausible(int64(value*1000*100 + 0.5))
+		}
+	}
+
+	if m := priceWithSymbol.FindStringSubmatch(s); m != nil {
+		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
+			return plausible(int64(value*100 + 0.5))
+		}
+	}
+
+	if m := bareNumber.FindStringSubmatch(s); m != nil {
+		if value, err := strconv.ParseFloat(decimalize(m[1]), 64); err == nil {
+			return plausible(int64(value*100 + 0.5))
+		}
+	}
+
+	return 0, false
+}
+
+func decimalize(s string) string {
+	if strings.Contains(s, ",") {
+		s = strings.ReplaceAll(s, ".", "")
+		return strings.ReplaceAll(s, ",", ".")
+	}
+	if strings.Count(s, ".") >= 1 {
+		parts := strings.Split(s, ".")
+		last := parts[len(parts)-1]
+		if len(last) == 3 {
+			return strings.ReplaceAll(s, ".", "")
+		}
+	}
+	return s
+}
+
+func plausible(cents int64) (int64, bool) {
+	if cents < minPlausiblePriceCents || cents > maxPlausiblePriceCents {
+		return 0, false
+	}
+	return cents, true
+}
