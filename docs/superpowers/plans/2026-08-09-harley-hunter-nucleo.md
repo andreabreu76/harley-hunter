@@ -2350,12 +2350,13 @@ CREATE INDEX IF NOT EXISTS idx_source_runs_source ON source_runs (source, starte
 `
 
 func Open(path string) (*Store, error) {
-	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)"
+	dsn := path + "?_pragma=foreign_keys(1)&_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate"
 	db, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
 	if _, err := db.Exec(schema); err != nil {
+		db.Close()
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
 	return &Store{db: db}, nil
@@ -2634,6 +2635,17 @@ O mesmo DSN liga `journal_mode(WAL)` e `busy_timeout(5000)`. A coleta agendada e
 o dashboard são processos distintos sobre o mesmo arquivo: sem WAL, uma escrita
 bloqueia toda leitura, e sem `busy_timeout` a escrita concorrente recebe
 `SQLITE_BUSY` de imediato em vez de esperar sua vez.
+
+`_txlock=immediate` completa o par, e sem ele metade do ganho não existe.
+`Upsert` abre a transação, faz o `SELECT` que decide entre inserir e atualizar,
+e só então escreve. Uma transação que começa lendo segura um snapshot de
+leitura, e a promoção de leitura para escrita é justamente o caso em que o
+SQLite ignora o `busy_timeout` de propósito — esperar ali poderia travar os dois
+lados. Medido: a escrita concorrente recebeu `SQLITE_BUSY` em 0s com 5000ms
+configurados, e é exatamente a escrita que a coleta executa por anúncio. Com
+`immediate`, o `BEGIN` toma o lock de escrita antes de qualquer leitura e o
+handler volta a valer. Só o `Upsert` abre transação; as leituras seguem em
+paralelo sob WAL.
 
 O WAL cumpre o que promete — com uma transação de escrita aberta, a leitura do
 outro processo retorna na hora. O `busy_timeout` sozinho **não**: ele não vale
