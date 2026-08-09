@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -14,23 +13,22 @@ import (
 )
 
 const (
-	olxFlightMarker  = "self.__next_f.push("
-	olxAdsMarker     = `"ads":[`
-	olxRequestDelay  = 2 * time.Second
-	olxClientTimeout = 30 * time.Second
+	olxFlightMarker = "self.__next_f.push("
+	olxAdsMarker    = `"ads":[`
+	olxRequestDelay = 2 * time.Second
 )
 
 type OLX struct {
-	client   *http.Client
+	fetcher  PageFetcher
 	baseURLs []string
 	delay    time.Duration
 }
 
-func NewOLX(client *http.Client, baseURLs []string) *OLX {
-	if client == nil {
-		client = &http.Client{Timeout: olxClientTimeout}
+func NewOLX(fetcher PageFetcher, baseURLs []string) *OLX {
+	if fetcher == nil {
+		fetcher = NewBrowserFetcher("")
 	}
-	return &OLX{client: client, baseURLs: baseURLs, delay: olxRequestDelay}
+	return &OLX{fetcher: fetcher, baseURLs: baseURLs, delay: olxRequestDelay}
 }
 
 func (o *OLX) Name() string { return "olx" }
@@ -56,24 +54,12 @@ func (o *OLX) Fetch(ctx context.Context) ([]model.RawListing, error) {
 }
 
 func (o *OLX) fetchOne(ctx context.Context, url string) ([]model.RawListing, error) {
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	page, err := o.fetcher.FetchPage(ctx, url)
 	if err != nil {
-		return nil, fmt.Errorf("building request for %s: %w", url, err)
-	}
-	req.Header.Set("User-Agent", defaultUserAgent)
-	req.Header.Set("Accept-Language", "pt-BR,pt;q=0.9")
-
-	resp, err := o.client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("fetching %s: %w", url, err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("fetching %s: status %d", url, resp.StatusCode)
+		return nil, err
 	}
 
-	listings, err := ParseOLX(resp.Body)
+	listings, err := ParseOLX(strings.NewReader(page))
 	if err != nil {
 		return nil, fmt.Errorf("parsing %s: %w", url, err)
 	}
@@ -125,6 +111,7 @@ func ParseOLX(body io.Reader) ([]model.RawListing, error) {
 			ExternalID:   ad.ListID.String(),
 			URL:          ad.URL,
 			Title:        ad.Subject,
+			RawText:      olxProperty(ad, "vehicle_model"),
 			PriceText:    ad.Price,
 			YearText:     olxProperty(ad, "regdate"),
 			KmText:       olxProperty(ad, "mileage"),

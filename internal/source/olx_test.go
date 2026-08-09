@@ -3,13 +3,14 @@ package source
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
+	"slices"
 	"testing"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
+	"github.com/andreabreu76/harley-hunter/internal/normalize"
 )
 
 func TestParseOLXExtractsListings(t *testing.T) {
@@ -58,6 +59,7 @@ func TestParseOLXMapsAdFields(t *testing.T) {
 		ExternalID:   "1499153946",
 		URL:          "https://pr.olx.com.br/regiao-de-curitiba-e-paranagua/autos-e-pecas/motos/harley-davidson-street-glide-ultra-2025-1499153946",
 		Title:        "HARLEY-DAVIDSON STREET GLIDE ULTRA 2025",
+		RawText:      "Harley-Davidson Glide Ultra Flhxu",
 		PriceText:    "R$ 185.000",
 		YearText:     "2025",
 		KmText:       "4780",
@@ -75,6 +77,28 @@ func TestParseOLXMapsAdFields(t *testing.T) {
 		return
 	}
 	t.Fatalf("listing %s not found in the fixture", want.ExternalID)
+}
+
+func TestParseOLXKeepsTheStructuredModelReachable(t *testing.T) {
+	listings := parseFixture(t, "testdata/olx-search.html")
+
+	for _, l := range listings {
+		if l.ExternalID != "1524873809" {
+			continue
+		}
+		if l.Title != "Stret glide excelente estado" {
+			t.Fatalf("fixture changed: Title = %q", l.Title)
+		}
+		if l.RawText != "Harley-Davidson Glide Flhx" {
+			t.Fatalf("RawText = %q, want the vehicle_model property", l.RawText)
+		}
+		bike, _ := normalize.DetectBike(l.Title + " " + l.RawText)
+		if bike != model.BikeStreetGlide {
+			t.Fatalf("DetectBike = %q, want %q: the typed title needs the model code to be classified", bike, model.BikeStreetGlide)
+		}
+		return
+	}
+	t.Fatal("listing 1524873809 not found in the fixture")
 }
 
 func TestParseOLXReturnsErrorWhenBlocked(t *testing.T) {
@@ -135,16 +159,8 @@ func TestOLXFetchCollectsEveryURL(t *testing.T) {
 		t.Fatalf("reading fixture: %v", err)
 	}
 
-	var agents []string
-	var paths []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		agents = append(agents, r.Header.Get("User-Agent"))
-		paths = append(paths, r.URL.Path)
-		w.Write(fixture)
-	}))
-	defer server.Close()
-
-	o := NewOLX(server.Client(), []string{server.URL + "/street", server.URL + "/road"})
+	fetcher := &fakePageFetcher{page: string(fixture)}
+	o := NewOLX(fetcher, []string{"https://olx.test/street", "https://olx.test/road"})
 	o.delay = 0
 
 	listings, err := o.Fetch(context.Background())
@@ -154,27 +170,57 @@ func TestOLXFetchCollectsEveryURL(t *testing.T) {
 	if got, want := len(listings), 84; got != want {
 		t.Fatalf("len(listings) = %d, want %d", got, want)
 	}
-	if got, want := len(paths), 2; got != want {
-		t.Fatalf("requested %d urls, want %d", got, want)
-	}
-	for i, a := range agents {
-		if a != defaultUserAgent {
-			t.Errorf("request %d: User-Agent = %q, want %q", i, a, defaultUserAgent)
-		}
+	want := []string{"https://olx.test/street", "https://olx.test/road"}
+	if !slices.Equal(fetcher.asked, want) {
+		t.Errorf("asked for %q, want %q", fetcher.asked, want)
 	}
 }
 
-func TestOLXFetchFailsOnUnexpectedStatus(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-	}))
-	defer server.Close()
-
-	o := NewOLX(server.Client(), []string{server.URL})
+func TestOLXFetchFailsWhenTheBrowserFails(t *testing.T) {
+	fetcher := &fakePageFetcher{err: errors.New("chrome is not listening")}
+	o := NewOLX(fetcher, []string{"https://olx.test/street"})
 	o.delay = 0
 
 	if _, err := o.Fetch(context.Background()); err == nil {
-		t.Fatal("Fetch should fail when the server answers 403")
+		t.Fatal("Fetch should fail when the page cannot be fetched")
+	}
+}
+
+func TestOLXFetchFailsWhenThePageCarriesNoPayload(t *testing.T) {
+	fetcher := &fakePageFetcher{page: "<html><body>Acesso negado</body></html>"}
+	o := NewOLX(fetcher, []string{"https://olx.test/street"})
+	o.delay = 0
+
+	if _, err := o.Fetch(context.Background()); err == nil {
+		t.Fatal("Fetch should fail when the browser lands on a block page")
+	}
+}
+
+func TestOLXFetchStopsOnACancelledContext(t *testing.T) {
+	fixture, err := os.ReadFile("testdata/olx-search.html")
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+
+	fetcher := &fakePageFetcher{page: string(fixture)}
+	o := NewOLX(fetcher, []string{"https://olx.test/street", "https://olx.test/road"})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	if _, err := o.Fetch(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Fetch error = %v, want context.Canceled", err)
+	}
+}
+
+func TestNewBrowserFetcherDefaultsToTheLocalDevtoolsPort(t *testing.T) {
+	var _ PageFetcher = NewBrowserFetcher("")
+
+	if got := NewBrowserFetcher("").devtoolsURL; got != defaultDevtoolsURL {
+		t.Errorf("devtoolsURL = %q, want %q", got, defaultDevtoolsURL)
+	}
+	if got := NewBrowserFetcher("http://127.0.0.1:9333").devtoolsURL; got != "http://127.0.0.1:9333" {
+		t.Errorf("devtoolsURL = %q, want the configured one", got)
 	}
 }
 
