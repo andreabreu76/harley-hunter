@@ -283,3 +283,71 @@ func TestUpsertLeavesThePhoneNilWhenTheAdHasNone(t *testing.T) {
 		t.Fatalf("Phone = %q, want nil", *row.Phone)
 	}
 }
+
+func TestUpsertKeepsThePublishedDateInUTC(t *testing.T) {
+	s := openTemp(t)
+	brt := time.FixedZone("BRT", -3*3600)
+	published := time.Date(2026, 8, 4, 9, 49, 53, 0, brt)
+
+	l := sample(7200000)
+	l.PublishedAt = &published
+	res, err := s.Upsert(l, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	row, _, err := s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.PublishedAt == nil {
+		t.Fatal("PublishedAt is nil, want the date that was written")
+	}
+	if !row.PublishedAt.Equal(published) {
+		t.Errorf("PublishedAt = %s, want %s", row.PublishedAt, published)
+	}
+	if row.PublishedAt.Location() != time.UTC {
+		t.Errorf("PublishedAt zone = %s, want UTC", row.PublishedAt.Location())
+	}
+}
+
+func TestUpsertDoesNotForgetAPublishedDateTheSourceStopsSending(t *testing.T) {
+	s := openTemp(t)
+	published := time.Date(2026, 8, 4, 12, 49, 53, 0, time.UTC)
+
+	l := sample(7200000)
+	l.PublishedAt = &published
+	res, err := s.Upsert(l, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	l.PublishedAt = nil
+	if _, err := s.Upsert(l, time.Now().Add(time.Hour)); err != nil {
+		t.Fatalf("Upsert without a date: %v", err)
+	}
+
+	row, _, err := s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.PublishedAt == nil || !row.PublishedAt.Equal(published) {
+		t.Fatalf("PublishedAt = %v, want %s to survive a round without it", row.PublishedAt, published)
+	}
+}
+
+func TestUpsertLeavesThePublishedDateNilWhenNoSourceEverSentOne(t *testing.T) {
+	s := openTemp(t)
+
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	row, _, err := s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.PublishedAt != nil {
+		t.Fatalf("PublishedAt = %s, want nil", row.PublishedAt)
+	}
+}

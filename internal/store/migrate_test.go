@@ -111,3 +111,39 @@ func TestOpenIsSafeToRunTwiceOverTheSameDatabase(t *testing.T) {
 		t.Fatalf("ListByVerdict after reopening: %v", err)
 	}
 }
+
+func TestOpenAddsThePublishedDateColumnToADatabaseFromTheEarlierSchema(t *testing.T) {
+	path := openLegacy(t)
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	rows, err := s.ListByVerdict("match")
+	if err != nil {
+		t.Fatalf("ListByVerdict on the migrated database: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want the row that was already there", len(rows))
+	}
+	if rows[0].PublishedAt != nil {
+		t.Errorf("PublishedAt = %s, want nil for a row written before the column existed", rows[0].PublishedAt)
+	}
+
+	published := time.Date(2026, 8, 4, 12, 49, 53, 0, time.UTC)
+	l := sample(7200000)
+	l.PublishedAt = &published
+	if _, err := s.Upsert(l, time.Now()); err != nil {
+		t.Fatalf("Upsert into the migrated database: %v", err)
+	}
+
+	row, _, err := s.GetRow(rows[0].ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.PublishedAt == nil || !row.PublishedAt.Equal(published) {
+		t.Fatalf("PublishedAt = %v, want %s", row.PublishedAt, published)
+	}
+}

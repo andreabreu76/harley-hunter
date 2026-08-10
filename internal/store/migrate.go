@@ -11,6 +11,7 @@ var addedColumns = []struct {
 	ddl    string
 }{
 	{"listings", "phone", "ALTER TABLE listings ADD COLUMN phone TEXT"},
+	{"listings", "published_at", "ALTER TABLE listings ADD COLUMN published_at TIMESTAMP"},
 }
 
 func addMissingColumns(db *sql.DB) error {
