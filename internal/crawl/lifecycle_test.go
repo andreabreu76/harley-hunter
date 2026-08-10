@@ -100,7 +100,7 @@ func TestNotifySkipsAGoneMatch(t *testing.T) {
 	}
 
 	n := &recordingNotifier{}
-	sent, err := Notify(context.Background(), s, n, 5)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}

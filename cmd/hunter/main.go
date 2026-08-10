@@ -62,7 +62,7 @@ func runCrawl(cfg config.Config) error {
 		return err
 	}
 	printReport(cfg, report, time.Since(started))
-	sendAlerts(cfg, db)
+	sendAlerts(cfg, db, report.Drops)
 	return nil
 }
 
@@ -78,8 +78,8 @@ func runServe(cfg config.Config) error {
 	return http.ListenAndServe(addr, web.NewServer(db, cfg.Sources))
 }
 
-func sendAlerts(cfg config.Config, db *store.Store) {
-	shown, err := crawl.Notify(context.Background(), db, notify.NewMacOS(), cfg.Crawl.MaxAlertsPerRun)
+func sendAlerts(cfg config.Config, db *store.Store, drops []crawl.PriceDrop) {
+	shown, err := crawl.Notify(context.Background(), db, notify.NewMacOS(), cfg.Crawl.MaxAlertsPerRun, drops)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "alerts failed after %d notifications: %v\n", shown, err)
 		return
