@@ -22,3 +22,30 @@ func TestThousands(t *testing.T) {
 		}
 	}
 }
+
+func TestPhone(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"11982413574", "(11) 98241-3574"},
+		{"1132551234", "(11) 3255-1234"},
+		{"", ""},
+		{"1198241357", "(11) 9824-1357"},
+		{"119824135741", "119824135741"},
+	}
+	for _, c := range cases {
+		if got := Phone(c.in); got != c.want {
+			t.Errorf("Phone(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestPhoneLink(t *testing.T) {
+	if got, want := PhoneLink("11982413574"), "+5511982413574"; got != want {
+		t.Errorf("PhoneLink = %q, want %q", got, want)
+	}
+	if got := PhoneLink(""); got != "" {
+		t.Errorf("PhoneLink(%q) = %q, want empty", "", got)
+	}
+}

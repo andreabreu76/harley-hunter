@@ -14,7 +14,10 @@
       <span class="tag">{{$card.Row.Source}}</span>
       {{with stateLabel $card.Row.UserState}} · {{.}}{{end}}
     </div>
-    <div class="links"><a href="{{$card.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio original</a></div>
+    <div class="links">
+      <a href="{{$card.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio original</a>
+      {{if $card.Row.Phone}} · <a class="fone" href="{{phoneLink $card.Row.Phone}}">{{phone $card.Row.Phone}}</a>{{end}}
+    </div>
     <div class="botoes">
       <form method="post" action="/listing/{{$card.Row.ID}}/state?value=contacted">
         <button type="submit">marcar contatado</button>

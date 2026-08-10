@@ -1,6 +1,7 @@
 package web
 
 import (
+	"html"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -679,5 +680,43 @@ func TestActiveTabIsMarked(t *testing.T) {
 		if strings.Count(body, `class="aba ativa"`) != 1 {
 			t.Errorf("%s should mark exactly one active tab", path)
 		}
+	}
+}
+
+func TestCardShowsThePhoneAsADialableLink(t *testing.T) {
+	s := emptyStore(t)
+	phone := "11982413574"
+	year := 2015
+	cents := int64(7200000)
+	upsert(t, s, model.Listing{
+		Source: "webmotors", ExternalID: "p1", URL: "https://example.com/p1",
+		Title: "Harley Street Glide", Bike: model.BikeStreetGlide, Year: &year,
+		PriceCents: &cents, City: "curitiba", State: "PR", Phone: &phone,
+		Verdict: model.VerdictMatch,
+	}, time.Now())
+
+	for _, path := range []string{"/", "/listing/1"} {
+		code, raw := get(t, NewServer(s, nil), path)
+		if code != http.StatusOK {
+			t.Fatalf("GET %s = %d", path, code)
+		}
+		body := html.UnescapeString(raw)
+		if !strings.Contains(body, `href="tel:+5511982413574"`) {
+			t.Errorf("GET %s has no tel link for the phone, body:\n%s", path, body)
+		}
+		if !strings.Contains(body, "(11) 98241-3574") {
+			t.Errorf("GET %s does not show the phone in a readable shape", path)
+		}
+	}
+}
+
+func TestCardWithoutAPhoneShowsNoContactLink(t *testing.T) {
+	s := seededStore(t)
+	code, body := get(t, NewServer(s, nil), "/")
+	if code != http.StatusOK {
+		t.Fatalf("GET / = %d", code)
+	}
+	if strings.Contains(body, "tel:") {
+		t.Errorf("listing without a phone still rendered a tel link, body:\n%s", body)
 	}
 }

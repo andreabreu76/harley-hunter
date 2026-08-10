@@ -26,7 +26,10 @@
         <span class="tag">{{.Row.Source}}</span>
         {{with stateLabel .Row.UserState}} · {{.}}{{end}}
       </div>
-      <div class="links"><a href="{{.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio</a></div>
+      <div class="links">
+        <a href="{{.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio</a>
+        {{if .Row.Phone}} · <a class="fone" href="{{phoneLink .Row.Phone}}">{{phone .Row.Phone}}</a>{{end}}
+      </div>
     </div>
     <div class="gauge">
       {{if .Row.PriceCents}}

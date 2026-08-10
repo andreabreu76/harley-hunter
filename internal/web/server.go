@@ -88,6 +88,8 @@ func NewServer(s *store.Store, sources []string) http.Handler {
 		"money":      func(cents *int64) string { return format.Thousands(*cents / 100) },
 		"moneyCents": func(cents int64) string { return format.Thousands(cents / 100) },
 		"km":         func(value *int) string { return format.Thousands(int64(*value)) },
+		"phone":      func(digits *string) string { return format.Phone(*digits) },
+		"phoneLink":  phoneLink,
 		"priceDrop":  priceDrop,
 		"location":   location,
 		"stateLabel": stateLabel,
@@ -378,6 +380,10 @@ func priceDrop(r store.Row) string {
 	}
 	return fmt.Sprintf("▼ R$ %s desde %s", format.Thousands(diff/100),
 		r.FirstSeenAt.In(time.Local).Format("02/01"))
+}
+
+func phoneLink(digits *string) template.URL {
+	return template.URL("tel:" + format.PhoneLink(*digits))
 }
 
 func location(r store.Row) string {
