@@ -20,7 +20,10 @@ var (
 
 func ParsePrice(s string) (int64, bool) {
 	s = strings.TrimSpace(s)
-	if s == "" || unavailablePrice.MatchString(s) {
+	if s == "" {
+		return 0, false
+	}
+	if unavailablePrice.MatchString(s) && !priceWithSymbol.MatchString(s) {
 		return 0, false
 	}
 

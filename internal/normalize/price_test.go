@@ -64,3 +64,36 @@ func TestParsePrice(t *testing.T) {
 		})
 	}
 }
+
+func TestConsulteDoesNotKillAPriceThatIsWrittenOut(t *testing.T) {
+	caption := "✅R$ 86.700,00\n🇧🇷ENTREGA PARA TODO O BRASIL\n☎️👉CONSULTE 41 995617244"
+
+	cents, ok := ParsePrice(caption)
+	if !ok {
+		t.Fatalf("ParsePrice returned no price: CONSULTE is a call to the phone, not an absent price")
+	}
+	if cents != 8670000 {
+		t.Errorf("ParsePrice = %d, want 8670000", cents)
+	}
+}
+
+func TestPriceStillAbsentWhenTheAdOnlySaysToAsk(t *testing.T) {
+	cases := []string{
+		"a combinar",
+		"Preço a combinar",
+		"valor sob consulta",
+		"CONSULTE",
+		"consulte o vendedor",
+	}
+	for _, text := range cases {
+		if cents, ok := ParsePrice(text); ok {
+			t.Errorf("ParsePrice(%q) = %d, true, want absent", text, cents)
+		}
+	}
+}
+
+func TestCombinarStillVetoesAThousandsFigure(t *testing.T) {
+	if cents, ok := ParsePrice("entrada 20 mil, restante a combinar"); ok {
+		t.Errorf("ParsePrice = %d, true, want absent: without an explicit R$ the ad is still asking to talk", cents)
+	}
+}
