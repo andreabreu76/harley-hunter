@@ -74,7 +74,7 @@ func runCrawl(cfg config.Config) error {
 	}
 	printReport(cfg, report, time.Since(started))
 	refreshFipe(db)
-	sendAlerts(cfg, db, report.Drops)
+	sendAlerts(cfg, db)
 	return nil
 }
 
@@ -116,8 +116,12 @@ func runRepairSilenced(cfg config.Config) error {
 	return nil
 }
 
-func sendAlerts(cfg config.Config, db *store.Store, drops []crawl.PriceDrop) {
-	shown, err := crawl.Notify(context.Background(), db, notify.NewMacOS(), cfg.Crawl.MaxAlertsPerRun, drops)
+func sendAlerts(cfg config.Config, db *store.Store) {
+	refs, err := db.FipeReferences()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fipe references unavailable, alerts will not rank by discount: %v\n", err)
+	}
+	shown, err := crawl.Notify(context.Background(), db, notify.NewMacOS(), cfg.Crawl.MaxAlertsPerRun, fipe.NewTable(refs))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "alerts failed after %d notifications: %v\n", shown, err)
 		return

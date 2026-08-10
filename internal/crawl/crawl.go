@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/config"
+	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/match"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/normalize"
@@ -50,16 +52,9 @@ type SourceResult struct {
 	Err       error
 }
 
-type PriceDrop struct {
-	ListingID     int64
-	PreviousCents int64
-	CurrentCents  int64
-}
-
 type Report struct {
 	Results       []SourceResult
 	NewMatches    int
-	Drops         []PriceDrop
 	Expired       int
 	StoreFailures int
 	StoreErr      error
@@ -143,9 +138,6 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 			if res.IsNew {
 				report.NewMatches++
 			}
-			if drop, ok := priceDrop(res, listing); ok {
-				report.Drops = append(report.Drops, drop)
-			}
 		}
 		if recErr := s.RecordRun(f.result.Source, f.started, f.finished, stored, f.result.Status, f.errMessage); recErr != nil {
 			storeErrs = append(storeErrs, recErr)
@@ -166,19 +158,21 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 	return report, nil
 }
 
-func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, drops []PriceDrop) (int, error) {
+func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, refs *fipe.Table) (int, error) {
 	if limit <= 0 {
 		limit = DefaultAlertsPerRun
 	}
-	pending, err := s.PendingNotifications(limit * pendingOversample)
+	pending, err := s.PendingAlerts(limit * pendingOversample)
 	if err != nil {
 		return 0, err
 	}
+	sort.SliceStable(pending, func(i, j int) bool {
+		return urgency(pending[i], refs) > urgency(pending[j], refs)
+	})
 
 	sent := 0
 	sightings := make(map[string]map[string]int, len(pending))
 	alerts := make(map[string]int, len(pending))
-	alerted := make(map[int64]bool, len(pending))
 	for _, row := range pending {
 		key, dedupable := dedupKey(row)
 		if dedupable {
@@ -193,7 +187,11 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, d
 		if sent >= limit {
 			break
 		}
-		if err := n.Send(ctx, notify.Alert{Message: notify.FormatAlert(row), URL: row.URL}); err != nil {
+		message := notify.FormatAlert(row)
+		if previous, ok := pendingDrop(row); ok {
+			message = notify.FormatPriceDrop(row, previous)
+		}
+		if err := n.Send(ctx, notify.Alert{Message: message, URL: row.URL}); err != nil {
 			return sent, fmt.Errorf("sending alert for listing %d: %w", row.ID, err)
 		}
 		if err := s.MarkNotified(row.ID, row.PriceCents); err != nil {
@@ -202,40 +200,36 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, d
 		if dedupable {
 			alerts[key]++
 		}
-		alerted[row.ID] = true
-		sent++
-	}
-
-	for _, drop := range drops {
-		if sent >= limit || alerted[drop.ListingID] {
-			continue
-		}
-		row, _, err := s.GetRow(drop.ListingID)
-		if err != nil {
-			continue
-		}
-		message := notify.FormatPriceDrop(row, drop.PreviousCents)
-		if err := n.Send(ctx, notify.Alert{Message: message, URL: row.URL}); err != nil {
-			return sent, fmt.Errorf("sending price drop for listing %d: %w", drop.ListingID, err)
-		}
-		alerted[drop.ListingID] = true
 		sent++
 	}
 	return sent, nil
 }
 
-func priceDrop(res store.UpsertResult, l model.Listing) (PriceDrop, bool) {
-	if !res.PriceChanged || res.PreviousCents == nil || l.PriceCents == nil {
-		return PriceDrop{}, false
+func pendingDrop(row store.Row) (int64, bool) {
+	if row.PriceCents == nil || row.NotifiedPriceCents == nil {
+		return 0, false
 	}
-	if *l.PriceCents >= *res.PreviousCents {
-		return PriceDrop{}, false
+	if *row.PriceCents >= *row.NotifiedPriceCents {
+		return 0, false
 	}
-	return PriceDrop{
-		ListingID:     res.ID,
-		PreviousCents: *res.PreviousCents,
-		CurrentCents:  *l.PriceCents,
-	}, true
+	return *row.NotifiedPriceCents, true
+}
+
+func urgency(row store.Row, refs *fipe.Table) float64 {
+	if row.PriceCents == nil {
+		return 0
+	}
+	if previous, ok := pendingDrop(row); ok {
+		return float64(previous-*row.PriceCents) / float64(previous)
+	}
+	if row.Year == nil {
+		return 0
+	}
+	ref, ok := refs.Lookup(row.Bike, row.Variant, *row.Year)
+	if !ok || ref.PriceCents <= *row.PriceCents {
+		return 0
+	}
+	return float64(ref.PriceCents-*row.PriceCents) / float64(ref.PriceCents)
 }
 
 func dedupKey(row store.Row) (string, bool) {

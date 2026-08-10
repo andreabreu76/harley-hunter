@@ -4,7 +4,9 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
@@ -24,68 +26,21 @@ func runWith(t *testing.T, s *store.Store, items ...model.RawListing) Report {
 	return report
 }
 
-func TestRunReportsAPriceDropOnAMatch(t *testing.T) {
-	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
-	report := runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
-
-	if len(report.Drops) != 1 {
-		t.Fatalf("got %d drops, want 1", len(report.Drops))
-	}
-	drop := report.Drops[0]
-	if drop.PreviousCents != 7200000 || drop.CurrentCents != 6800000 {
-		t.Errorf("drop = %+v, want 7200000 to 6800000", drop)
-	}
-	if drop.ListingID == 0 {
-		t.Error("drop carries no listing id")
-	}
-}
-
-func TestRunReportsNoDropOnTheFirstSighting(t *testing.T) {
-	s := openStore(t)
-	report := runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
-
-	if len(report.Drops) != 0 {
-		t.Errorf("got %d drops on a first sighting, want none", len(report.Drops))
-	}
-}
-
-func TestRunIgnoresAPriceIncrease(t *testing.T) {
-	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
-	report := runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
-
-	if len(report.Drops) != 0 {
-		t.Errorf("got %d drops on a price increase, want none", len(report.Drops))
-	}
-}
-
-func TestRunIgnoresADropOnAListingThatIsNotAMatch(t *testing.T) {
-	s := openStore(t)
-	tooDear := func(price string) model.RawListing {
-		raw := pricedAt("olx", "1", price)
-		raw.YearText = "2016"
-		return raw
-	}
-	runWith(t, s, tooDear("R$ 84.000"))
-	report := runWith(t, s, tooDear("R$ 80.000"))
-
-	if len(report.Drops) != 0 {
-		t.Errorf("got %d drops on a maybe listing, want none: only matches ring the phone", len(report.Drops))
+func drainAlerts(t *testing.T, s *store.Store) {
+	t.Helper()
+	if _, err := Notify(context.Background(), s, &recordingNotifier{}, 5, nil); err != nil {
+		t.Fatalf("draining the pending alerts: %v", err)
 	}
 }
 
 func TestNotifyAlertsThePriceDropLeadingWithTheSignal(t *testing.T) {
 	s := openStore(t)
 	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
-	report := runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
-
-	if _, err := Notify(context.Background(), s, &recordingNotifier{}, 5, nil); err != nil {
-		t.Fatalf("draining the pending alert: %v", err)
-	}
+	drainAlerts(t, s)
+	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
 
 	n := &recordingNotifier{}
-	sent, err := Notify(context.Background(), s, n, 5, report.Drops)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -103,34 +58,140 @@ func TestNotifyAlertsThePriceDropLeadingWithTheSignal(t *testing.T) {
 	}
 }
 
-func TestNotifyDropsShareThePerRunCapWithNewMatches(t *testing.T) {
+func TestNotifyKeepsADropPendingWhenTheCapIsSpent(t *testing.T) {
 	s := openStore(t)
-	first := []model.RawListing{pricedAt("olx", "1", "R$ 72.000")}
-	for i := 2; i <= 5; i++ {
-		first = append(first, pricedAt("olx", string(rune('0'+i)), "R$ 70.000"))
-	}
-	runWith(t, s, first...)
-
-	if _, err := Notify(context.Background(), s, &recordingNotifier{}, 5, nil); err != nil {
-		t.Fatalf("draining the pending alerts: %v", err)
-	}
-
-	second := []model.RawListing{pricedAt("olx", "1", "R$ 68.000"), pricedAt("olx", "9", "R$ 71.000")}
-	report := runWith(t, s, second...)
-	if len(report.Drops) != 1 {
-		t.Fatalf("got %d drops, want 1", len(report.Drops))
-	}
+	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+	drainAlerts(t, s)
+	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"), pricedAt("olx", "9", "R$ 71.000"))
 
 	n := &recordingNotifier{}
-	sent, err := Notify(context.Background(), s, n, 1, report.Drops)
+	sent, err := Notify(context.Background(), s, n, 1, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
 	if sent != 1 {
-		t.Errorf("sent = %d, want 1: the drop must not spend a slot beyond the cap", sent)
+		t.Fatalf("sent = %d, want 1: the cap allows one", sent)
 	}
-	if strings.HasPrefix(n.messages[0], "▼") {
-		t.Errorf("alert = %q, want the new match first and the drop only if the cap allows", n.messages[0])
+	if !strings.HasPrefix(n.messages[0], "▼") {
+		t.Errorf("alert = %q, want the measured drop ahead of a match with no reference", n.messages[0])
+	}
+
+	rest := &recordingNotifier{}
+	sent, err = Notify(context.Background(), s, rest, 5, nil)
+	if err != nil {
+		t.Fatalf("second Notify: %v", err)
+	}
+	if sent != 1 {
+		t.Errorf("sent = %d, want 1: what did not fit must survive the round", sent)
+	}
+}
+
+func TestNotifyKeepsADropPendingWhenDeliveryFails(t *testing.T) {
+	s := openStore(t)
+	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+	drainAlerts(t, s)
+	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+
+	if _, err := Notify(context.Background(), s, &recordingNotifier{failAt: 1}, 5, nil); err == nil {
+		t.Fatal("Notify should surface the delivery error")
+	}
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify after the failure: %v", err)
+	}
+	if sent != 1 {
+		t.Errorf("sent = %d, want 1: a failed delivery leaves the drop pending", sent)
+	}
+}
+
+func TestNotifyCollapsesTwoDropsIntoTheAccumulatedOne(t *testing.T) {
+	s := openStore(t)
+	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+	drainAlerts(t, s)
+	runWith(t, s, pricedAt("olx", "1", "R$ 70.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("sent = %d, want 1: two drops before delivery are one piece of news", sent)
+	}
+	if !strings.HasPrefix(n.messages[0], "▼ R$ 4.000: ") {
+		t.Errorf("alert = %q, want the accumulated drop from 72.000 to 68.000", n.messages[0])
+	}
+}
+
+func TestNotifyStaysQuietWhenThePriceGoesBackUp(t *testing.T) {
+	s := openStore(t)
+	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+	drainAlerts(t, s)
+	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 0 {
+		t.Errorf("sent = %d, want 0: a price rise is not news", sent)
+	}
+
+	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+	back := &recordingNotifier{}
+	sent, err = Notify(context.Background(), s, back, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify after coming back down: %v", err)
+	}
+	if sent != 0 {
+		t.Errorf("sent = %d, want 0: coming back to a price already announced is not news", sent)
+	}
+}
+
+func TestNotifyRanksTheBiggerDiscountFirst(t *testing.T) {
+	s := openStore(t)
+	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"), pricedAt("olx", "2", "R$ 72.000"))
+	drainAlerts(t, s)
+	runWith(t, s, pricedAt("olx", "1", "R$ 70.000"), pricedAt("olx", "2", "R$ 64.000"))
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 1, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("sent = %d, want 1", sent)
+	}
+	if !strings.HasPrefix(n.messages[0], "▼ R$ 8.000: ") {
+		t.Errorf("alert = %q, want the 8.000 drop ahead of the 2.000 one", n.messages[0])
+	}
+}
+
+func TestNotifyRanksTheDeeperFipeDiscountFirst(t *testing.T) {
+	s := openStore(t)
+	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"), pricedAt("olx", "2", "R$ 60.000"))
+
+	refs := fipe.NewTable([]fipe.Reference{{
+		Bike:       model.BikeStreetGlide,
+		Variant:    model.VariantSpecial,
+		Year:       2015,
+		PriceCents: 7500000,
+	}})
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 1, refs)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("sent = %d, want 1", sent)
+	}
+	if !strings.Contains(n.messages[0], "R$ 60.000") {
+		t.Errorf("alert = %q, want the listing furthest below the fipe first", n.messages[0])
 	}
 }
 
@@ -143,52 +204,52 @@ func TestNotifyAlertsOnceWhenADropAlsoFlipsMaybeToMatch(t *testing.T) {
 		t.Fatalf("seed should be a maybe: %d rows, %v", len(rows), err)
 	}
 
-	report := runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
-	if len(report.Drops) != 1 {
-		t.Fatalf("got %d drops, want 1", len(report.Drops))
-	}
+	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
 
 	n := &recordingNotifier{}
-	sent, err := Notify(context.Background(), s, n, 5, report.Drops)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
 	if sent != 1 {
-		t.Fatalf("sent = %d, want 1: the flip already alerts, the drop must not double it", sent)
+		t.Fatalf("sent = %d, want 1: the flip alerts once, not twice", sent)
 	}
 	if strings.HasPrefix(n.messages[0], "▼") {
-		t.Errorf("alert = %q, want the plain new-match alert the pending pass sends", n.messages[0])
+		t.Errorf("alert = %q, want the plain new-match alert", n.messages[0])
 	}
 }
 
-func TestNotifySurfacesAFailedDropDelivery(t *testing.T) {
+func TestNotifyAlertsACrossPostDropOnlyOnce(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
-	report := runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
 
-	if _, err := Notify(context.Background(), s, &recordingNotifier{}, 5, nil); err != nil {
-		t.Fatalf("draining the pending alert: %v", err)
+	posted := func(source, id string, cents int64, km int) model.Listing {
+		l := matchListing(id)
+		l.Source = source
+		l.PriceCents = &cents
+		l.Km = &km
+		l.Fingerprint = "aa11bb22cc33dd44"
+		return l
 	}
 
-	n := &recordingNotifier{failAt: 1}
-	sent, err := Notify(context.Background(), s, n, 5, report.Drops)
-	if err == nil {
-		t.Fatal("Notify should surface the delivery error")
+	for _, l := range []model.Listing{posted("olx", "1", 7200000, 53000), posted("mercadolivre", "2", 7200000, 53000)} {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
 	}
-	if sent != 0 {
-		t.Errorf("sent = %d, want 0", sent)
-	}
-}
+	drainAlerts(t, s)
 
-func TestNotifyIgnoresADropWhoseListingIsGone(t *testing.T) {
-	s := openStore(t)
+	for _, l := range []model.Listing{posted("olx", "1", 6800000, 53000), posted("mercadolivre", "2", 6800000, 53000)} {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert after the drop: %v", err)
+		}
+	}
+
 	n := &recordingNotifier{}
-
-	sent, err := Notify(context.Background(), s, n, 5, []PriceDrop{{ListingID: 4242, PreviousCents: 7200000, CurrentCents: 6800000}})
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
-	if sent != 0 {
-		t.Errorf("sent = %d, want 0 for a listing that no longer exists", sent)
+	if sent != 1 {
+		t.Errorf("sent = %d, want 1: both sides of a cross-post dropping is one piece of news", sent)
 	}
 }
