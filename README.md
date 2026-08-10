@@ -43,6 +43,20 @@ Dashboard local, sob demanda — não entra no agendamento:
 Sobe em <http://127.0.0.1:8080> com as abas de match, maybe, rejeitados e saúde
 das fontes. Encerra com Ctrl+C.
 
+Devolve à fila de alerta os anúncios que o dedup antigo calou sem avisar:
+
+```bash
+~/bin/hunter -config config/config.yaml repair-silenced
+```
+
+Ele lista os ids que vai liberar antes de gravar e, no fim, quantos voltaram para
+a fila. O próximo `crawl` avisa sobre eles, respeitando o teto de alertas por
+rodada.
+
+Rode **uma única vez**, num momento em que dê para acompanhar a fila — nunca no
+agendamento. O comando se rearma: depois que um anúncio liberado já foi avisado,
+rodar de novo o coloca outra vez na fila e gera alerta duplicado.
+
 ## Agendamento
 
 A coleta roda sozinha a cada 2 horas por um agente do `launchd`.

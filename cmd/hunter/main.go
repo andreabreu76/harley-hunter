@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -108,12 +109,30 @@ func runRepairSilenced(cfg config.Config) error {
 	}
 	defer db.Close()
 
+	silenced, err := db.SilencedTwinIDs()
+	if err != nil {
+		return err
+	}
+	if len(silenced) == 0 {
+		fmt.Println("no silenced listing left to free")
+		return nil
+	}
+	fmt.Printf("freeing %d silenced listings: %s\n", len(silenced), joinIDs(silenced))
+
 	freed, err := db.RequeueSilencedTwins()
 	if err != nil {
 		return err
 	}
 	fmt.Printf("listings back in the alert queue: %d\n", freed)
 	return nil
+}
+
+func joinIDs(ids []int64) string {
+	text := make([]string, 0, len(ids))
+	for _, id := range ids {
+		text = append(text, strconv.FormatInt(id, 10))
+	}
+	return strings.Join(text, ", ")
 }
 
 func sendAlerts(cfg config.Config, db *store.Store) {

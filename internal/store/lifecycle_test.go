@@ -537,6 +537,56 @@ func TestRequeueSilencedTwinsFreesTheYoungerOfTwoOnOneSource(t *testing.T) {
 	}
 }
 
+func TestSilencedTwinIDsNamesExactlyWhatTheRequeueFrees(t *testing.T) {
+	s := openTemp(t)
+
+	twin := func(id string, km int) model.Listing {
+		l := sample(6100000)
+		l.Source = "webmotors"
+		l.ExternalID = id
+		l.Km = &km
+		l.Fingerprint = "aa11bb22cc33dd44"
+		return l
+	}
+
+	var ids []int64
+	for _, l := range []model.Listing{twin("237", 53000), twin("251", 53118), twin("263", 53240)} {
+		res, err := s.Upsert(l, time.Now())
+		if err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+		if err := s.MarkNotified(res.ID, nil); err != nil {
+			t.Fatalf("MarkNotified: %v", err)
+		}
+		ids = append(ids, res.ID)
+	}
+
+	announced, err := s.SilencedTwinIDs()
+	if err != nil {
+		t.Fatalf("SilencedTwinIDs: %v", err)
+	}
+	want := ids[1:]
+	if len(announced) != len(want) || announced[0] != want[0] || announced[1] != want[1] {
+		t.Fatalf("announced = %v, want %v: the two twins the oldest ad silenced", announced, want)
+	}
+
+	freed, err := s.RequeueSilencedTwins()
+	if err != nil {
+		t.Fatalf("RequeueSilencedTwins: %v", err)
+	}
+	if freed != len(announced) {
+		t.Errorf("freed = %d, want the %d ids already announced", freed, len(announced))
+	}
+
+	after, err := s.SilencedTwinIDs()
+	if err != nil {
+		t.Fatalf("SilencedTwinIDs after the requeue: %v", err)
+	}
+	if len(after) != 0 {
+		t.Errorf("still silenced = %v, want none left", after)
+	}
+}
+
 func TestRequeueSilencedTwinsLeavesACrossPostAlone(t *testing.T) {
 	s := openTemp(t)
 
