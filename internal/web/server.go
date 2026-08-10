@@ -32,6 +32,8 @@ var watchedRegions = []struct {
 
 const otherRegionName = "Outras regiões"
 
+const repostLabel = "possível reanúncio"
+
 type server struct {
 	store      *store.Store
 	sources    []string
@@ -42,8 +44,20 @@ type server struct {
 
 type regionGroup struct {
 	Name    string
-	Rows    []store.Row
+	Cards   []card
 	Scanned int
+}
+
+type card struct {
+	Row    store.Row
+	Closed bool
+	Repost *repost
+}
+
+type repost struct {
+	OtherID int64
+	Cheaper bool
+	Label   string
 }
 
 type sourceHealth struct {
@@ -122,16 +136,72 @@ func (s *server) list(view listView) http.HandlerFunc {
 			fail(w, http.StatusInternalServerError, err)
 			return
 		}
+		groups, err := s.store.RepostGroups()
+		if err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		cards := make([]card, 0, len(rows))
+		for _, row := range rows {
+			cards = append(cards, newCard(row, siblingsOf(row, groups)))
+		}
 		s.render(w, s.listTmpl, map[string]any{
 			"Title":  view.title,
 			"Nav":    view.nav,
-			"Groups": groupByRegion(rows, scanned),
+			"Groups": groupByRegion(cards, scanned),
 			"Empty":  view.empty,
 		})
 	}
 }
 
-func groupByRegion(rows []store.Row, scanned map[string]int) []regionGroup {
+func newCard(row store.Row, siblings []store.Row) card {
+	return card{Row: row, Closed: row.Status == store.StatusGone, Repost: repostOf(row, siblings)}
+}
+
+func siblingsOf(row store.Row, groups map[string][]store.Row) []store.Row {
+	if row.Fingerprint == "" || row.Km == nil {
+		return nil
+	}
+	group := groups[row.Fingerprint]
+	siblings := make([]store.Row, 0, len(group))
+	for _, other := range group {
+		if other.ID != row.ID {
+			siblings = append(siblings, other)
+		}
+	}
+	return siblings
+}
+
+func repostOf(row store.Row, siblings []store.Row) *repost {
+	if len(siblings) == 0 {
+		return nil
+	}
+	badge := &repost{OtherID: siblings[0].ID, Label: repostLabel}
+	previous, ok := previousSighting(row, siblings)
+	if !ok {
+		return badge
+	}
+	badge.OtherID = previous.ID
+	if row.PriceCents != nil && previous.PriceCents != nil && *row.PriceCents < *previous.PriceCents {
+		badge.Cheaper = true
+		badge.Label = fmt.Sprintf("%s · R$ %s a menos", repostLabel,
+			format.Thousands((*previous.PriceCents-*row.PriceCents)/100))
+	}
+	return badge
+}
+
+func previousSighting(row store.Row, siblings []store.Row) (store.Row, bool) {
+	for _, other := range siblings {
+		if other.FirstSeenAt.Before(row.FirstSeenAt) ||
+			(other.FirstSeenAt.Equal(row.FirstSeenAt) && other.ID < row.ID) {
+			return other, true
+		}
+	}
+	return store.Row{}, false
+}
+
+func groupByRegion(cards []card, scanned map[string]int) []regionGroup {
 	groups := make([]regionGroup, 0, len(watchedRegions)+1)
 	watched := make(map[string]bool, len(watchedRegions))
 	for _, region := range watchedRegions {
@@ -146,20 +216,20 @@ func groupByRegion(rows []store.Row, scanned map[string]int) []regionGroup {
 		}
 	}
 
-	for _, row := range rows {
+	for _, c := range cards {
 		placed := false
 		for i, region := range watchedRegions {
-			if row.State == region.Code {
-				groups[i].Rows = append(groups[i].Rows, row)
+			if c.Row.State == region.Code {
+				groups[i].Cards = append(groups[i].Cards, c)
 				placed = true
 				break
 			}
 		}
 		if !placed {
-			other.Rows = append(other.Rows, row)
+			other.Cards = append(other.Cards, c)
 		}
 	}
-	if len(other.Rows) > 0 {
+	if len(other.Cards) > 0 {
 		groups = append(groups, other)
 	}
 	return groups
@@ -176,7 +246,14 @@ func (s *server) detail(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, err)
 		return
 	}
-	s.render(w, s.detailTmpl, map[string]any{"Title": row.Title, "Nav": "", "Row": row, "Points": points})
+	siblings, err := s.store.RepostsOf(row.Fingerprint, row.ID)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.render(w, s.detailTmpl, map[string]any{
+		"Title": row.Title, "Nav": "", "Card": newCard(row, siblings), "Points": points,
+	})
 }
 
 func (s *server) setState(w http.ResponseWriter, r *http.Request) {

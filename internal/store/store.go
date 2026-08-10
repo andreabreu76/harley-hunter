@@ -30,6 +30,7 @@ type Row struct {
 	ImageURL        string
 	Verdict         model.Verdict
 	UserState       string
+	Status          string
 	Fingerprint     string
 	FirstSeenAt     time.Time
 	LastSeenAt      time.Time
@@ -113,7 +114,7 @@ func (s *Store) Close() error {
 const rowColumns = `
     l.id, l.source, l.external_id, l.url, l.title, l.bike, l.variant, l.year,
     l.price_cents, l.km, l.city, l.state, l.image_url, l.verdict, l.user_state,
-    l.fingerprint, l.first_seen_at, l.last_seen_at,
+    l.status, l.fingerprint, l.first_seen_at, l.last_seen_at,
     (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC, p.id ASC LIMIT 1)
 `
 
@@ -121,7 +122,7 @@ func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
 	var r Row
 	err := scanner.Scan(&r.ID, &r.Source, &r.ExternalID, &r.URL, &r.Title, &r.Bike,
 		&r.Variant, &r.Year, &r.PriceCents, &r.Km, &r.City, &r.State, &r.ImageURL,
-		&r.Verdict, &r.UserState, &r.Fingerprint, &r.FirstSeenAt, &r.LastSeenAt,
+		&r.Verdict, &r.UserState, &r.Status, &r.Fingerprint, &r.FirstSeenAt, &r.LastSeenAt,
 		&r.FirstPriceCents)
 	return r, err
 }

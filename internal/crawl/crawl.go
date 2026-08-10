@@ -53,6 +53,7 @@ type SourceResult struct {
 type Report struct {
 	Results       []SourceResult
 	NewMatches    int
+	Expired       int
 	StoreFailures int
 	StoreErr      error
 	SharedCause   error
@@ -129,6 +130,12 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 			}
 		}
 	}
+
+	expired, err := s.ExpireUnseen(store.ExpiryRounds)
+	if err != nil {
+		storeErrs = append(storeErrs, err)
+	}
+	report.Expired = expired
 
 	report.StoreFailures = len(storeErrs)
 	if len(storeErrs) > 0 {

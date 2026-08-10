@@ -7,33 +7,34 @@
     <span class="risco"></span>
     <span class="avaliados">{{scanned .Scanned}}</span>
   </div>
-  {{if not .Rows}}<p class="vazio">{{$empty}}</p>{{end}}
-  {{range .Rows}}
-  <article class="card">
+  {{if not .Cards}}<p class="vazio">{{$empty}}</p>{{end}}
+  {{range .Cards}}
+  <article class="card{{if .Closed}} encerrada{{end}}">
     <div class="foto">
-      {{if .ImageURL}}<img src="{{.ImageURL}}" alt="" referrerpolicy="no-referrer" loading="lazy">{{else}}<span class="sem-foto">sem foto</span>{{end}}
+      {{if .Row.ImageURL}}<img src="{{.Row.ImageURL}}" alt="" referrerpolicy="no-referrer" loading="lazy">{{else}}<span class="sem-foto">sem foto</span>{{end}}
     </div>
     <div class="corpo">
       <div class="linha-titulo">
-        {{if eq .UserState "new"}}<span class="novo" title="ainda não triado"></span>{{end}}
-        <a class="titulo" href="/listing/{{.ID}}">{{.Title}}</a>
+        {{if eq .Row.UserState "new"}}<span class="novo" title="ainda não triado"></span>{{end}}
+        <a class="titulo" href="/listing/{{.Row.ID}}">{{.Row.Title}}</a>
       </div>
+      {{template "selos" .}}
       <div class="meta">
-        {{if .Year}}<span class="num">{{.Year}}</span> · {{end}}
-        {{if .Km}}<span class="num">{{km .Km}}</span> km · {{end}}
-        {{with location .}}{{.}} · {{end}}
-        <span class="tag">{{.Source}}</span>
-        {{with stateLabel .UserState}} · {{.}}{{end}}
+        {{if .Row.Year}}<span class="num">{{.Row.Year}}</span> · {{end}}
+        {{if .Row.Km}}<span class="num">{{km .Row.Km}}</span> km · {{end}}
+        {{with location .Row}}{{.}} · {{end}}
+        <span class="tag">{{.Row.Source}}</span>
+        {{with stateLabel .Row.UserState}} · {{.}}{{end}}
       </div>
-      <div class="links"><a href="{{.URL}}" target="_blank" rel="noreferrer">abrir anúncio</a></div>
+      <div class="links"><a href="{{.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio</a></div>
     </div>
     <div class="gauge">
-      {{if .PriceCents}}
-      <div class="odo"><span class="cifrao">R$</span>{{money .PriceCents}}</div>
+      {{if .Row.PriceCents}}
+      <div class="odo"><span class="cifrao">R$</span>{{money .Row.PriceCents}}</div>
       {{else}}
       <div class="sem-preco">preço não informado</div>
       {{end}}
-      {{with priceDrop .}}<div class="ticker">{{.}}</div>{{end}}
+      {{with priceDrop .Row}}<div class="ticker">{{.}}</div>{{end}}
     </div>
   </article>
   {{end}}

@@ -123,5 +123,6 @@ func printReport(cfg config.Config, report crawl.Report, elapsed time.Duration) 
 	if report.StoreFailures > 0 {
 		fmt.Printf("storage failures: %d (first: %v)\n", report.StoreFailures, report.StoreErr)
 	}
-	fmt.Printf("new matches: %d in %s\n", report.NewMatches, elapsed.Round(time.Second))
+	fmt.Printf("new matches: %d, closed: %d in %s\n",
+		report.NewMatches, report.Expired, elapsed.Round(time.Second))
 }

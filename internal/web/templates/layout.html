@@ -141,6 +141,23 @@ header {
 }
 .titulo { font-size: 0.97rem; font-weight: 600; text-decoration: none; }
 .titulo:hover { text-decoration: underline; }
+.selos { display: flex; flex-wrap: wrap; gap: 0.35rem; margin-top: 0.4rem; }
+.selo {
+  font-family: var(--dados);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 0.1rem 0.45rem;
+  border: 1px solid var(--linha);
+  border-radius: 999px;
+  color: var(--grafite);
+  text-decoration: none;
+  white-space: nowrap;
+}
+a.selo:hover { color: var(--cromado); border-color: rgba(232, 230, 225, 0.28); }
+.selo-baixa { color: var(--laranja-hd); border-color: rgba(240, 100, 35, 0.45); }
+.selo-fim { color: var(--ambar); border-color: rgba(224, 163, 62, 0.40); }
+.card.encerrada .foto img, .card.encerrada .odo, .card.encerrada .titulo { opacity: 0.55; }
 .meta { margin-top: 0.3rem; color: var(--grafite); font-size: 0.82rem; }
 .num { font-family: var(--dados); }
 .tag { font-family: var(--dados); font-size: 0.76rem; }
@@ -237,4 +254,13 @@ a:focus-visible, button:focus-visible {
 {{template "content" .}}
 </body>
 </html>
+{{end}}
+
+{{define "selos"}}
+{{if or .Closed .Repost}}
+<div class="selos">
+  {{if .Closed}}<span class="selo selo-fim">encerrado</span>{{end}}
+  {{if .Repost}}<a class="selo{{if .Repost.Cheaper}} selo-baixa{{end}}" href="/listing/{{.Repost.OtherID}}">{{.Repost.Label}}</a>{{end}}
+</div>
+{{end}}
 {{end}}
