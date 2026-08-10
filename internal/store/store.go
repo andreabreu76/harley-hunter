@@ -37,6 +37,9 @@ type Row struct {
 	FirstSeenAt     time.Time
 	LastSeenAt      time.Time
 	FirstPriceCents *int64
+
+	Notified           bool
+	NotifiedPriceCents *int64
 }
 
 type PricePoint struct {
@@ -66,6 +69,7 @@ CREATE TABLE IF NOT EXISTS listings (
     fingerprint TEXT NOT NULL DEFAULT '',
     user_state TEXT NOT NULL DEFAULT 'new',
     notified INTEGER NOT NULL DEFAULT 0,
+    notified_price_cents INTEGER,
     status TEXT NOT NULL DEFAULT 'active',
     published_at TIMESTAMP,
     first_seen_at TIMESTAMP NOT NULL,
@@ -136,7 +140,8 @@ const rowColumns = `
     l.id, l.source, l.external_id, l.url, l.title, l.bike, l.variant, l.year,
     l.price_cents, l.km, l.city, l.state, l.image_url, l.phone, l.verdict, l.user_state,
     l.status, l.fingerprint, l.published_at, l.first_seen_at, l.last_seen_at,
-    (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC, p.id ASC LIMIT 1)
+    (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC, p.id ASC LIMIT 1),
+    l.notified, l.notified_price_cents
 `
 
 func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
@@ -144,7 +149,7 @@ func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
 	err := scanner.Scan(&r.ID, &r.Source, &r.ExternalID, &r.URL, &r.Title, &r.Bike,
 		&r.Variant, &r.Year, &r.PriceCents, &r.Km, &r.City, &r.State, &r.ImageURL,
 		&r.Phone, &r.Verdict, &r.UserState, &r.Status, &r.Fingerprint, &r.PublishedAt,
-		&r.FirstSeenAt, &r.LastSeenAt, &r.FirstPriceCents)
+		&r.FirstSeenAt, &r.LastSeenAt, &r.FirstPriceCents, &r.Notified, &r.NotifiedPriceCents)
 	return r, err
 }
 

@@ -9,9 +9,16 @@ var addedColumns = []struct {
 	table  string
 	column string
 	ddl    string
+	seed   string
 }{
-	{"listings", "phone", "ALTER TABLE listings ADD COLUMN phone TEXT"},
-	{"listings", "published_at", "ALTER TABLE listings ADD COLUMN published_at TIMESTAMP"},
+	{table: "listings", column: "phone", ddl: "ALTER TABLE listings ADD COLUMN phone TEXT"},
+	{table: "listings", column: "published_at", ddl: "ALTER TABLE listings ADD COLUMN published_at TIMESTAMP"},
+	{
+		table:  "listings",
+		column: "notified_price_cents",
+		ddl:    "ALTER TABLE listings ADD COLUMN notified_price_cents INTEGER",
+		seed:   "UPDATE listings SET notified_price_cents = price_cents WHERE notified = 1 AND price_cents IS NOT NULL",
+	},
 }
 
 func addMissingColumns(db *sql.DB) error {
@@ -25,6 +32,12 @@ func addMissingColumns(db *sql.DB) error {
 		}
 		if _, err := db.Exec(c.ddl); err != nil {
 			return fmt.Errorf("adding column %s.%s: %w", c.table, c.column, err)
+		}
+		if c.seed == "" {
+			continue
+		}
+		if _, err := db.Exec(c.seed); err != nil {
+			return fmt.Errorf("seeding column %s.%s: %w", c.table, c.column, err)
 		}
 	}
 	return nil

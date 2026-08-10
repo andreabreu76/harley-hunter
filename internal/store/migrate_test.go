@@ -147,3 +147,76 @@ func TestOpenAddsThePublishedDateColumnToADatabaseFromTheEarlierSchema(t *testin
 		t.Fatalf("PublishedAt = %v, want %s", row.PublishedAt, published)
 	}
 }
+
+func TestOpenAnchorsAlreadyNotifiedRowsAtTheirCurrentPrice(t *testing.T) {
+	path := openLegacy(t)
+
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopening legacy database: %v", err)
+	}
+	if _, err := legacy.Exec("UPDATE listings SET notified = 1, price_cents = 7200000"); err != nil {
+		t.Fatalf("marking the legacy row notified: %v", err)
+	}
+	legacy.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	rows, err := s.ListByVerdict("match")
+	if err != nil {
+		t.Fatalf("ListByVerdict: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want the legacy row", len(rows))
+	}
+	if rows[0].NotifiedPriceCents == nil || *rows[0].NotifiedPriceCents != 7200000 {
+		t.Errorf("NotifiedPriceCents = %v, want the price already communicated", rows[0].NotifiedPriceCents)
+	}
+}
+
+func TestOpenDoesNotReanchorAPendingDropOnASecondRun(t *testing.T) {
+	path := openLegacy(t)
+
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopening legacy database: %v", err)
+	}
+	if _, err := legacy.Exec("UPDATE listings SET notified = 1, price_cents = 7200000"); err != nil {
+		t.Fatalf("marking the legacy row notified: %v", err)
+	}
+	legacy.Close()
+
+	first, err := Open(path)
+	if err != nil {
+		t.Fatalf("first Open: %v", err)
+	}
+	first.Close()
+
+	dropped, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopening to drop the price: %v", err)
+	}
+	if _, err := dropped.Exec("UPDATE listings SET price_cents = 6800000"); err != nil {
+		t.Fatalf("dropping the price: %v", err)
+	}
+	dropped.Close()
+
+	second, err := Open(path)
+	if err != nil {
+		t.Fatalf("second Open: %v", err)
+	}
+	t.Cleanup(func() { second.Close() })
+
+	rows, err := second.ListByVerdict("match")
+	if err != nil {
+		t.Fatalf("ListByVerdict: %v", err)
+	}
+	if rows[0].NotifiedPriceCents == nil || *rows[0].NotifiedPriceCents != 7200000 {
+		t.Errorf("NotifiedPriceCents = %v, want the anchor to survive so the drop stays pending",
+			rows[0].NotifiedPriceCents)
+	}
+}
