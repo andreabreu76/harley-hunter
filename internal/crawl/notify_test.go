@@ -226,6 +226,44 @@ func TestNotifyKeepsBothWhenTheSameSourceRepeatsAFingerprint(t *testing.T) {
 	}
 }
 
+func TestNotifyKeepsTheSecondSameSourceAdAfterACrossPost(t *testing.T) {
+	s := openStore(t)
+
+	onOlx := withKm(matchListing("olx-237"), 53000)
+	onOlx.Fingerprint = "aa11bb22cc33dd44"
+
+	mirrored := withKm(matchListing("wm-237"), 53000)
+	mirrored.Source = "webmotors"
+	mirrored.Fingerprint = onOlx.Fingerprint
+
+	otherBike := withKm(matchListing("wm-251"), 53118)
+	otherBike.Source = "webmotors"
+	otherBike.Fingerprint = onOlx.Fingerprint
+
+	for _, l := range []model.Listing{onOlx, mirrored, otherBike} {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+	}
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 2 {
+		t.Errorf("sent = %d, want 2: the olx cross-post must not silence a second webmotors bike", sent)
+	}
+
+	pending, err := s.PendingNotifications(10)
+	if err != nil {
+		t.Fatalf("PendingNotifications: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("%d rows left pending, want 0", len(pending))
+	}
+}
+
 func TestNotifyDedupSkipsDoNotConsumeCapSlots(t *testing.T) {
 	s := openStore(t)
 
