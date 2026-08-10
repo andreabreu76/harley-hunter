@@ -399,3 +399,100 @@ func notifiedPriceOf(t *testing.T, s *Store, id int64) *int64 {
 	}
 	return row.NotifiedPriceCents
 }
+
+func TestPendingAlertsCarriesNewMatchesAndPriceDrops(t *testing.T) {
+	s := openTemp(t)
+
+	fresh, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	dropping := sample(7200000)
+	dropping.ExternalID = "dropping"
+	res, err := s.Upsert(dropping, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	anchored := int64(7200000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	steady := sample(7000000)
+	steady.ExternalID = "steady"
+	quiet, err := s.Upsert(steady, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	held := int64(7000000)
+	if err := s.MarkNotified(quiet.ID, &held); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	pending, err := s.PendingAlerts(10)
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != fresh.ID {
+		t.Fatalf("pending = %d rows, want just the new match", len(pending))
+	}
+
+	dropped := dropping
+	lower := int64(6800000)
+	dropped.PriceCents = &lower
+	if _, err := s.Upsert(dropped, time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+
+	pending, err = s.PendingAlerts(10)
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("pending = %d rows, want the new match and the drop", len(pending))
+	}
+	var sawDrop bool
+	for _, row := range pending {
+		if row.ID == res.ID {
+			sawDrop = true
+		}
+		if row.ID == quiet.ID {
+			t.Error("a listing whose price did not move must stay out of the queue")
+		}
+	}
+	if !sawDrop {
+		t.Error("the drop is missing from the queue")
+	}
+}
+
+func TestPendingAlertsIgnoresADropOnAListingAlreadyGone(t *testing.T) {
+	s := openTemp(t)
+
+	l := sample(7200000)
+	res, err := s.Upsert(l, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	anchored := int64(7200000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	lower := int64(6800000)
+	l.PriceCents = &lower
+	if _, err := s.Upsert(l, time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+	if _, err := s.db.Exec("UPDATE listings SET status = ? WHERE id = ?", StatusGone, res.ID); err != nil {
+		t.Fatalf("closing the listing: %v", err)
+	}
+
+	pending, err := s.PendingAlerts(10)
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending = %d rows, want 0: a closed ad is not an opportunity", len(pending))
+	}
+}

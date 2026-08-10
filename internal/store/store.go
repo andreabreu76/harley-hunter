@@ -175,6 +175,21 @@ func (s *Store) PendingNotifications(limit int) ([]Row, error) {
 	return collectRows(rows)
 }
 
+func (s *Store) PendingAlerts(limit int) ([]Row, error) {
+	query := "SELECT " + rowColumns + ` FROM listings l
+        WHERE l.verdict = 'match' AND l.status = 'active'
+          AND (l.notified = 0
+               OR (l.price_cents IS NOT NULL AND l.notified_price_cents IS NOT NULL
+                   AND l.price_cents < l.notified_price_cents))
+        ORDER BY l.first_seen_at ASC, l.id ASC LIMIT ?`
+	rows, err := s.db.Query(query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("querying pending alerts: %w", err)
+	}
+	defer rows.Close()
+	return collectRows(rows)
+}
+
 func (s *Store) MarkNotified(id int64, priceCents *int64) error {
 	_, err := s.db.Exec(
 		`UPDATE listings SET notified = 1,
