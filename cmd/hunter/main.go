@@ -111,6 +111,8 @@ func buildSources(cfg config.Config) ([]crawl.Source, error) {
 			sources = append(sources, source.NewMobiauto(fetcher, cfg.SourceURLs[name]))
 		case model.SourceInstagram:
 			sources = append(sources, meta.NewInstagram(fetcher, cfg.SourceURLs[name]))
+		case model.SourceMarketplace:
+			sources = append(sources, meta.NewMarketplace(fetcher, cfg.SourceURLs[name]))
 		default:
 			return nil, fmt.Errorf("unknown source in config: %s", name)
 		}

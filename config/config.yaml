@@ -5,6 +5,7 @@ sources:
   - webmotors
   - mobiauto
   - instagram
+  - marketplace
 devtools_url: http://127.0.0.1:9222
 source_urls:
   olx:
@@ -37,6 +38,13 @@ source_urls:
     - https://www.instagram.com/explore/tags/roadglide/
     - https://www.instagram.com/explore/tags/harleyusada/
     - https://www.instagram.com/explore/tags/harleydavidsonbrasil/
+  marketplace:
+    - "https://www.facebook.com/marketplace/curitiba/search?query=harley%20street%20glide&radius=100"
+    - "https://www.facebook.com/marketplace/saopaulo/search?query=harley%20street%20glide&radius=100"
+    - "https://www.facebook.com/marketplace/riodejaneiro/search?query=harley%20street%20glide&radius=100"
+    - "https://www.facebook.com/marketplace/curitiba/search?query=harley%20road%20glide&radius=100"
+    - "https://www.facebook.com/marketplace/saopaulo/search?query=harley%20road%20glide&radius=100"
+    - "https://www.facebook.com/marketplace/riodejaneiro/search?query=harley%20road%20glide&radius=100"
 match:
   years: [2014, 2015]
   maybe_years: [2013, 2016]
