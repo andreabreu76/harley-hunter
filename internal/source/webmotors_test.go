@@ -377,3 +377,29 @@ func parseWebmotorsFixture(t *testing.T, path string) []model.RawListing {
 	}
 	return listings
 }
+
+func TestWebmotorsFetchStillReadsTheOtherRegionsAfterAnOverflow(t *testing.T) {
+	page, err := io.ReadAll(webmotorsFixtureWithPageTotal(t, 2))
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+
+	fetcher := &fakePageFetcher{page: string(page)}
+	urls := []string{"https://webmotors.test/sp", "https://webmotors.test/pr", "https://webmotors.test/rj"}
+	w := NewWebmotors(fetcher, urls)
+	w.delay = 0
+
+	listings, err := w.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("Fetch should still report the overflow")
+	}
+	if !errors.Is(err, ErrPartialPage) {
+		t.Errorf("error %v does not carry ErrPartialPage", err)
+	}
+	if !slices.Equal(fetcher.asked, urls) {
+		t.Fatalf("asked for %q, want every url: a wide search in one region must not blind the others", fetcher.asked)
+	}
+	if got, want := len(listings), 3*42; got != want {
+		t.Fatalf("len(listings) = %d, want %d", got, want)
+	}
+}

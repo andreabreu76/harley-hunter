@@ -122,8 +122,8 @@ func ParseWebmotors(body io.Reader) ([]model.RawListing, error) {
 		return nil, fmt.Errorf("webmotors read %d results and no listing: result payload changed", len(results))
 	}
 	if total := response.Pagination.PageTotal; total > 1 {
-		return listings, fmt.Errorf("webmotors search spans %d pages and only page %d is read: %d of %d results collected",
-			total, max(response.Pagination.PageCurrent, 1), len(listings), response.Count)
+		return listings, fmt.Errorf("%w: webmotors search spans %d pages and only page %d is read, %d of %d results collected",
+			ErrPartialPage, total, max(response.Pagination.PageCurrent, 1), len(listings), response.Count)
 	}
 	return listings, nil
 }

@@ -132,8 +132,8 @@ func ParseMobiauto(body io.Reader) ([]model.RawListing, error) {
 		return nil, fmt.Errorf("mobiauto read %d results and no listing: result payload changed", len(results))
 	}
 	if deals.NumResults > len(results) {
-		return listings, fmt.Errorf("mobiauto search has %d results and only %d fit in the page that was read",
-			deals.NumResults, len(results))
+		return listings, fmt.Errorf("%w: mobiauto search has %d results and only %d fit in the page that was read",
+			ErrPartialPage, deals.NumResults, len(results))
 	}
 	return listings, nil
 }

@@ -405,3 +405,29 @@ func parseMobiautoFixture(t *testing.T, path string) []model.RawListing {
 	}
 	return listings
 }
+
+func TestMobiautoFetchStillReadsTheOtherRegionsAfterAnOverflow(t *testing.T) {
+	page, err := io.ReadAll(mobiautoFixtureWithNumResults(t, 305))
+	if err != nil {
+		t.Fatalf("reading fixture: %v", err)
+	}
+
+	fetcher := &fakePageFetcher{page: string(page)}
+	urls := []string{"https://mobiauto.test/sp", "https://mobiauto.test/pr", "https://mobiauto.test/rj"}
+	m := NewMobiauto(fetcher, urls)
+	m.delay = 0
+
+	listings, err := m.Fetch(context.Background())
+	if err == nil {
+		t.Fatal("Fetch should still report the overflow")
+	}
+	if !errors.Is(err, ErrPartialPage) {
+		t.Errorf("error %v does not carry ErrPartialPage", err)
+	}
+	if !slices.Equal(fetcher.asked, urls) {
+		t.Fatalf("asked for %q, want every url: a bad slug on one url must not kill the other five", fetcher.asked)
+	}
+	if got, want := len(listings), 3*5; got != want {
+		t.Fatalf("len(listings) = %d, want %d", got, want)
+	}
+}

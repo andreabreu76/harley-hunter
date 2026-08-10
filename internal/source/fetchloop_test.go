@@ -3,6 +3,7 @@ package source
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"slices"
 	"strings"
@@ -181,5 +182,68 @@ func TestFetchPagesReturnsNothingForNoURLs(t *testing.T) {
 	}
 	if len(fetcher.asked) != 0 {
 		t.Errorf("asked for %q, want no request", fetcher.asked)
+	}
+}
+
+func TestFetchPagesCarriesOnPastAPartialPage(t *testing.T) {
+	fetcher := &fakePageFetcher{page: "page"}
+	urls := []string{"https://test/a", "https://test/b", "https://test/c"}
+	overflow := fmt.Errorf("%w: only page 1 of 4 was read", ErrPartialPage)
+
+	listings, err := fetchPages(context.Background(), fetcher, urls, 0, parserReturning(oneListing("row"), overflow))
+	if err == nil {
+		t.Fatal("fetchPages should still surface the overflow at the end")
+	}
+	if !errors.Is(err, ErrPartialPage) {
+		t.Errorf("error %v does not carry ErrPartialPage", err)
+	}
+	if !slices.Equal(fetcher.asked, urls) {
+		t.Fatalf("asked for %q, want every url: a page too small to hold the search does not kill the ones after it", fetcher.asked)
+	}
+	if got, want := len(listings), 3; got != want {
+		t.Fatalf("len(listings) = %d, want %d: every url's partial page is kept", got, want)
+	}
+	for _, url := range urls {
+		if !strings.Contains(err.Error(), url) {
+			t.Errorf("error %q does not name %s", err, url)
+		}
+	}
+}
+
+func TestFetchPagesStillStopsOnARealParserError(t *testing.T) {
+	fetcher := &fakePageFetcher{page: "page"}
+	blocked := errors.New("payload not found: request was blocked")
+
+	_, err := fetchPages(context.Background(), fetcher, []string{"https://test/a", "https://test/b"}, 0, parserReturning(nil, blocked))
+	if !errors.Is(err, blocked) {
+		t.Fatalf("error = %v, want the parser error", err)
+	}
+	if errors.Is(err, ErrPartialPage) {
+		t.Error("a blocked page is not a partial page")
+	}
+	if len(fetcher.asked) != 1 {
+		t.Errorf("asked for %q, want it to stop at the first url", fetcher.asked)
+	}
+}
+
+func TestFetchPagesReportsAPartialPageAlongsideALaterRealError(t *testing.T) {
+	fetcher := &fakePageFetcher{page: "page"}
+	overflow := fmt.Errorf("%w: only page 1 of 4 was read", ErrPartialPage)
+	blocked := errors.New("payload not found")
+
+	call := 0
+	_, err := fetchPages(context.Background(), fetcher, []string{"https://test/a", "https://test/b"}, 0,
+		func(io.Reader) ([]model.RawListing, error) {
+			call++
+			if call == 1 {
+				return oneListing("row"), overflow
+			}
+			return nil, blocked
+		})
+	if !errors.Is(err, blocked) {
+		t.Errorf("error %v does not carry the real failure", err)
+	}
+	if !errors.Is(err, ErrPartialPage) {
+		t.Errorf("error %v dropped the partial page it had already found", err)
 	}
 }
