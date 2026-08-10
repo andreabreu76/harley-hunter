@@ -248,6 +248,7 @@ func TestInstagramSoldCaption(t *testing.T) {
 		{"Motocicleta impecável - Revisões em dia R$ vendida", true},
 		{"Harley Davidson XL 1200 Sportster Iron - 2020 VENDIDO", true},
 		{"Os dois vendidos na mesma semana", true},
+		{"✅ 𝐕𝐄𝐍𝐃𝐈𝐃𝐎 Harley Davidson XL 1200 Sportster Iron - 2020", true},
 		{"À VENDA! Street Glide 2013, motor TC103", false},
 		{"Vendo minha Road Glide 2015", false},
 		{"Vende-se Street Glide R$ 70.000", false},
