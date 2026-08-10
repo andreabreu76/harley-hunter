@@ -36,3 +36,11 @@ func FormatAlert(r store.Row) string {
 	}
 	return fmt.Sprintf("%s [%s]", strings.Join(fields, " - "), r.Source)
 }
+
+func FormatPriceDrop(r store.Row, previousCents int64) string {
+	current := int64(0)
+	if r.PriceCents != nil {
+		current = *r.PriceCents
+	}
+	return fmt.Sprintf("▼ R$ %s: %s", format.Thousands((previousCents-current)/100), FormatAlert(r))
+}

@@ -2,6 +2,7 @@ package crawl
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"github.com/andreabreu76/harley-hunter/internal/config"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
+	_ "modernc.org/sqlite"
 )
 
 type fakeSource struct {
@@ -379,5 +381,61 @@ func TestHealthStatusStaysQuietWithoutVolumeEvidence(t *testing.T) {
 	counts := []int{0, 0, 0, 0, 0}
 	if got := HealthStatus(counts); got != "ok" {
 		t.Errorf("HealthStatus(%v) = %q, want %q: no run ever produced volume, so there is nothing to compare against", counts, got, "ok")
+	}
+}
+
+func TestRunDoesNotCallARoundProductiveWhenNothingCouldBeStored(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "refuse.db")
+	s, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	side, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("opening the second connection: %v", err)
+	}
+	defer side.Close()
+	if _, err := side.Exec(
+		`CREATE TRIGGER refuse_listings BEFORE INSERT ON listings
+         BEGIN SELECT RAISE(ABORT, 'the listings table is refusing writes'); END`); err != nil {
+		t.Fatalf("installing the trigger: %v", err)
+	}
+
+	only := fakeSource{name: "olx", items: []model.RawListing{harley("olx", "1"), harley("olx", "2")}}
+	report, err := Run(context.Background(), []Source{only}, s, testConfig())
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if report.StoreFailures == 0 {
+		t.Fatal("the refused writes must be reported")
+	}
+
+	counts, err := s.RecentRunCounts("olx", 5)
+	if err != nil {
+		t.Fatalf("RecentRunCounts: %v", err)
+	}
+	if len(counts) != 1 {
+		t.Fatalf("counts = %v, want one recorded run", counts)
+	}
+	if counts[0] != 0 {
+		t.Errorf("recorded item_count = %d, want 0: a round that stored nothing is not a round that saw the ads, and three of them expire the source", counts[0])
+	}
+}
+
+func TestRunRecordsWhatItActuallyStored(t *testing.T) {
+	s := openStore(t)
+	only := fakeSource{name: "olx", items: []model.RawListing{harley("olx", "1"), harley("olx", "2")}}
+
+	if _, err := Run(context.Background(), []Source{only}, s, testConfig()); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	counts, err := s.RecentRunCounts("olx", 5)
+	if err != nil {
+		t.Fatalf("RecentRunCounts: %v", err)
+	}
+	if len(counts) != 1 || counts[0] != 2 {
+		t.Errorf("counts = %v, want [2]", counts)
 	}
 }

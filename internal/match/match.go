@@ -22,7 +22,7 @@ func evaluateBike(bike string) model.Verdict {
 	switch bike {
 	case model.BikeStreetGlide, model.BikeRoadGlide:
 		return model.VerdictMatch
-	case model.BikeTouringUnknown:
+	case model.BikeElectraGlide, model.BikeUltra, model.BikeTouringUnknown:
 		return model.VerdictMaybe
 	default:
 		return model.VerdictReject
@@ -56,6 +56,9 @@ func evaluatePrice(cents *int64, c config.MatchCriteria) model.Verdict {
 }
 
 func evaluateLocation(city, state string) model.Verdict {
+	if city == "" && state == "" {
+		return model.VerdictMaybe
+	}
 	switch normalize.LocationTier(city, state) {
 	case "metro":
 		return model.VerdictMatch

@@ -6,6 +6,7 @@ require gopkg.in/yaml.v3 v3.0.1
 
 require (
 	github.com/PuerkitoBio/goquery v1.12.0
+	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f
 	github.com/chromedp/chromedp v0.16.0
 	golang.org/x/text v0.40.0
 	modernc.org/sqlite v1.56.0
@@ -13,7 +14,6 @@ require (
 
 require (
 	github.com/andybalholm/cascadia v1.3.3 // indirect
-	github.com/chromedp/cdproto v0.0.0-20260714215040-dc233986426f // indirect
 	github.com/chromedp/sysutil v1.1.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/go-json-experiment/json v0.0.0-20260623181947-01eb4420fa68 // indirect

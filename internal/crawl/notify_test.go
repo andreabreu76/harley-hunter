@@ -69,7 +69,7 @@ func TestNotifyRespectsPerRunCap(t *testing.T) {
 	s := storeWithMatches(t, 12)
 	n := &recordingNotifier{}
 
-	sent, err := Notify(context.Background(), s, n, 5)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -93,7 +93,7 @@ func TestNotifyDoesNotMarkOnFailure(t *testing.T) {
 	s := storeWithMatches(t, 2)
 	n := &recordingNotifier{failAt: 1}
 
-	if _, err := Notify(context.Background(), s, n, 5); err == nil {
+	if _, err := Notify(context.Background(), s, n, 5, nil); err == nil {
 		t.Fatal("Notify should surface the delivery error")
 	}
 
@@ -110,7 +110,7 @@ func TestNotifyKeepsDeliveredRowsMarkedAfterAPartialFailure(t *testing.T) {
 	s := storeWithMatches(t, 4)
 	n := &recordingNotifier{failAt: 3}
 
-	sent, err := Notify(context.Background(), s, n, 5)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err == nil {
 		t.Fatal("Notify should surface the delivery error")
 	}
@@ -147,7 +147,7 @@ func TestNotifyDeduplicatesByFingerprint(t *testing.T) {
 	}
 
 	n := &recordingNotifier{}
-	sent, err := Notify(context.Background(), s, n, 5)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestNotifyKeepsBothWhenMileageIsUnknown(t *testing.T) {
 	}
 
 	n := &recordingNotifier{}
-	sent, err := Notify(context.Background(), s, n, 5)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -212,7 +212,7 @@ func TestNotifyDedupSkipsDoNotConsumeCapSlots(t *testing.T) {
 	}
 
 	n := &recordingNotifier{}
-	sent, err := Notify(context.Background(), s, n, 5)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -233,7 +233,7 @@ func TestNotifyTreatsEmptyFingerprintsAsDistinct(t *testing.T) {
 	s := storeWithMatches(t, 3)
 	n := &recordingNotifier{}
 
-	sent, err := Notify(context.Background(), s, n, 5)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -246,7 +246,7 @@ func TestNotifyDefaultsTheCapWhenUnset(t *testing.T) {
 	s := storeWithMatches(t, 9)
 	n := &recordingNotifier{}
 
-	sent, err := Notify(context.Background(), s, n, 0)
+	sent, err := Notify(context.Background(), s, n, 0, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -259,7 +259,7 @@ func TestNotifyIsQuietWithNothingPending(t *testing.T) {
 	s := openStore(t)
 	n := &recordingNotifier{}
 
-	sent, err := Notify(context.Background(), s, n, 5)
+	sent, err := Notify(context.Background(), s, n, 5, nil)
 	if err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
@@ -277,7 +277,7 @@ func TestNotifyCarriesTheListingURLOnTheAlert(t *testing.T) {
 	}
 
 	n := &recordingNotifier{}
-	if _, err := Notify(context.Background(), s, n, 5); err != nil {
+	if _, err := Notify(context.Background(), s, n, 5, nil); err != nil {
 		t.Fatalf("Notify: %v", err)
 	}
 	if len(n.alerts) != 1 {

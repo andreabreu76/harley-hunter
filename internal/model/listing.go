@@ -1,11 +1,22 @@
 package model
 
+import "time"
+
 type Verdict string
 
 const (
 	VerdictMatch  Verdict = "match"
 	VerdictMaybe  Verdict = "maybe"
 	VerdictReject Verdict = "reject"
+)
+
+const (
+	SourceOLX          = "olx"
+	SourceMercadoLivre = "mercadolivre"
+	SourceWebmotors    = "webmotors"
+	SourceMobiauto     = "mobiauto"
+	SourceInstagram    = "instagram"
+	SourceMarketplace  = "marketplace"
 )
 
 const (
@@ -42,6 +53,7 @@ type RawListing struct {
 	KmText       string
 	LocationText string
 	ImageURL     string
+	PublishedAt  *time.Time
 }
 
 type Listing struct {
@@ -58,6 +70,8 @@ type Listing struct {
 	City          string
 	State         string
 	ImageURL      string
+	Phone         *string
+	PublishedAt   *time.Time
 	Verdict       Verdict
 	VerdictReason map[string]Verdict
 	Fingerprint   string

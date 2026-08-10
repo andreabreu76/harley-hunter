@@ -50,9 +50,17 @@ type SourceResult struct {
 	Err       error
 }
 
+type PriceDrop struct {
+	ListingID     int64
+	PreviousCents int64
+	CurrentCents  int64
+}
+
 type Report struct {
 	Results       []SourceResult
 	NewMatches    int
+	Drops         []PriceDrop
+	Expired       int
 	StoreFailures int
 	StoreErr      error
 	SharedCause   error
@@ -69,14 +77,16 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 	}
 
 	type fetched struct {
-		result SourceResult
-		items  []model.RawListing
+		result     SourceResult
+		items      []model.RawListing
+		started    time.Time
+		finished   time.Time
+		errMessage string
 	}
 
 	gathered := make([]fetched, len(sources))
 	var (
 		wg        sync.WaitGroup
-		mu        sync.Mutex
 		storeErrs []error
 		sem       = make(chan struct{}, concurrency)
 	)
@@ -101,12 +111,13 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 				result.Status = StatusError
 				errMessage = err.Error()
 			}
-			if recErr := s.RecordRun(src.Name(), started, finished, len(items), result.Status, errMessage); recErr != nil {
-				mu.Lock()
-				storeErrs = append(storeErrs, recErr)
-				mu.Unlock()
+			gathered[i] = fetched{
+				result:     result,
+				items:      items,
+				started:    started,
+				finished:   finished,
+				errMessage: errMessage,
 			}
-			gathered[i] = fetched{result: result, items: items}
 		}(i, src)
 	}
 	wg.Wait()
@@ -115,6 +126,7 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 	now := time.Now()
 	for _, f := range gathered {
 		report.Results = append(report.Results, f.result)
+		stored := 0
 		for _, raw := range f.items {
 			listing := normalize.Normalize(raw)
 			listing.Verdict, listing.VerdictReason = match.Evaluate(listing, cfg.Match)
@@ -124,11 +136,27 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 				storeErrs = append(storeErrs, fmt.Errorf("storing %s/%s: %w", raw.Source, raw.ExternalID, err))
 				continue
 			}
-			if res.IsNew && listing.Verdict == model.VerdictMatch {
+			stored++
+			if listing.Verdict != model.VerdictMatch {
+				continue
+			}
+			if res.IsNew {
 				report.NewMatches++
 			}
+			if drop, ok := priceDrop(res, listing); ok {
+				report.Drops = append(report.Drops, drop)
+			}
+		}
+		if recErr := s.RecordRun(f.result.Source, f.started, f.finished, stored, f.result.Status, f.errMessage); recErr != nil {
+			storeErrs = append(storeErrs, recErr)
 		}
 	}
+
+	expired, err := s.ExpireUnseen(store.ExpiryRounds)
+	if err != nil {
+		storeErrs = append(storeErrs, err)
+	}
+	report.Expired = expired
 
 	report.StoreFailures = len(storeErrs)
 	if len(storeErrs) > 0 {
@@ -138,7 +166,7 @@ func Run(ctx context.Context, sources []Source, s *store.Store, cfg config.Confi
 	return report, nil
 }
 
-func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (int, error) {
+func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, drops []PriceDrop) (int, error) {
 	if limit <= 0 {
 		limit = DefaultAlertsPerRun
 	}
@@ -149,6 +177,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 
 	sent := 0
 	seen := make(map[string]bool, len(pending))
+	alerted := make(map[int64]bool, len(pending))
 	for _, row := range pending {
 		key, dedupable := dedupKey(row)
 		if dedupable && seen[key] {
@@ -169,9 +198,40 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int) (
 		if dedupable {
 			seen[key] = true
 		}
+		alerted[row.ID] = true
+		sent++
+	}
+
+	for _, drop := range drops {
+		if sent >= limit || alerted[drop.ListingID] {
+			continue
+		}
+		row, _, err := s.GetRow(drop.ListingID)
+		if err != nil {
+			continue
+		}
+		message := notify.FormatPriceDrop(row, drop.PreviousCents)
+		if err := n.Send(ctx, notify.Alert{Message: message, URL: row.URL}); err != nil {
+			return sent, fmt.Errorf("sending price drop for listing %d: %w", drop.ListingID, err)
+		}
+		alerted[drop.ListingID] = true
 		sent++
 	}
 	return sent, nil
+}
+
+func priceDrop(res store.UpsertResult, l model.Listing) (PriceDrop, bool) {
+	if !res.PriceChanged || res.PreviousCents == nil || l.PriceCents == nil {
+		return PriceDrop{}, false
+	}
+	if *l.PriceCents >= *res.PreviousCents {
+		return PriceDrop{}, false
+	}
+	return PriceDrop{
+		ListingID:     res.ID,
+		PreviousCents: *res.PreviousCents,
+		CurrentCents:  *l.PriceCents,
+	}, true
 }
 
 func dedupKey(row store.Row) (string, bool) {

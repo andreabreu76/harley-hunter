@@ -1,34 +1,44 @@
 {{define "content"}}
-<h1 class="detalhe-titulo">{{.Row.Title}}</h1>
-<article class="card">
+{{$card := .Card}}
+<h1 class="detalhe-titulo">{{$card.Row.Title}}</h1>
+<article class="card{{if $card.Closed}} encerrada{{end}}">
   <div class="foto">
-    {{if .Row.ImageURL}}<img src="{{.Row.ImageURL}}" alt="" referrerpolicy="no-referrer" loading="lazy">{{else}}<span class="sem-foto">sem foto</span>{{end}}
+    {{if $card.Row.ImageURL}}<img src="{{$card.Row.ImageURL}}" alt="" referrerpolicy="no-referrer" loading="lazy">{{else}}<span class="sem-foto">sem foto</span>{{end}}
   </div>
   <div class="corpo">
+    {{template "selos" $card}}
     <div class="meta">
-      {{if .Row.Year}}<span class="num">{{.Row.Year}}</span> · {{end}}
-      {{if .Row.Km}}<span class="num">{{km .Row.Km}}</span> km · {{end}}
-      {{with location .Row}}{{.}} · {{end}}
-      <span class="tag">{{.Row.Source}}</span>
-      {{with stateLabel .Row.UserState}} · {{.}}{{end}}
+      {{if $card.Row.Year}}<span class="num">{{$card.Row.Year}}</span> · {{end}}
+      {{if $card.Row.Km}}<span class="num">{{km $card.Row.Km}}</span> km · {{end}}
+      {{with location $card.Row}}{{.}} · {{end}}
+      <span class="tag">{{$card.Row.Source}}</span>
+      {{with stateLabel $card.Row.UserState}} · {{.}}{{end}}
     </div>
-    <div class="links"><a href="{{.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio original</a></div>
+    <div class="idade">{{age $card.Row}}</div>
+    {{with $card.Fipe}}<div class="fipe{{if .Bargain}} barganha{{end}}">FIPE ({{.Label}} {{.Year}}{{if .Base}} base{{end}}): R$ {{moneyCents .Cents}}{{with .Gap}} · {{.}}{{end}}</div>{{end}}
+    <div class="datas">
+      {{if $card.Row.PublishedAt}}publicado em {{datetimeOf $card.Row.PublishedAt}} · {{end}}no radar desde {{datetime $card.Row.FirstSeenAt}}
+    </div>
+    <div class="links">
+      <a href="{{$card.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio original</a>
+      {{if $card.Row.Phone}} · <a class="fone" href="{{phoneLink $card.Row.Phone}}">{{phone $card.Row.Phone}}</a>{{end}}
+    </div>
     <div class="botoes">
-      <form method="post" action="/listing/{{.Row.ID}}/state?value=contacted">
+      <form method="post" action="/listing/{{$card.Row.ID}}/state?value=contacted">
         <button type="submit">marcar contatado</button>
       </form>
-      <form method="post" action="/listing/{{.Row.ID}}/state?value=dismissed">
+      <form method="post" action="/listing/{{$card.Row.ID}}/state?value=dismissed">
         <button type="submit">descartar</button>
       </form>
     </div>
   </div>
   <div class="gauge">
-    {{if .Row.PriceCents}}
-    <div class="odo"><span class="cifrao">R$</span>{{money .Row.PriceCents}}</div>
+    {{if $card.Row.PriceCents}}
+    <div class="odo"><span class="cifrao">R$</span>{{money $card.Row.PriceCents}}</div>
     {{else}}
     <div class="sem-preco">preço não informado</div>
     {{end}}
-    {{with priceDrop .Row}}<div class="ticker">{{.}}</div>{{end}}
+    {{with priceDrop $card.Row}}<div class="ticker">{{.}}</div>{{end}}
   </div>
 </article>
 

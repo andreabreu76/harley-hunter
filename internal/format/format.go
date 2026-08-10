@@ -1,9 +1,29 @@
 package format
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+const countryCode = "+55"
+
+func Phone(digits string) string {
+	switch len(digits) {
+	case 10, 11:
+		return "(" + digits[:2] + ") " + digits[2:len(digits)-4] + "-" + digits[len(digits)-4:]
+	}
+	return digits
+}
+
+var dialableDigits = regexp.MustCompile(`^[0-9]{10,11}$`)
+
+func PhoneLink(digits string) string {
+	if !dialableDigits.MatchString(digits) {
+		return ""
+	}
+	return countryCode + digits
+}
 
 func Thousands(value int64) string {
 	digits := strconv.FormatInt(value, 10)

@@ -8,7 +8,7 @@ no navegador.
 ## Pré-requisitos
 
 - Go 1.26+
-- Google Chrome instalado (a coleta lê as páginas por CDP; as duas fontes bloqueiam HTTP puro)
+- Google Chrome instalado (OLX, Mercado Livre e Webmotors bloqueiam HTTP puro e são lidas por CDP; a Mobiauto não precisa dele)
 - `terminal-notifier` (`brew install terminal-notifier`), necessário para o clique no banner abrir o anúncio
 
 ## Instalação
@@ -73,8 +73,25 @@ abrir o anúncio. A causa é o `PATH` mínimo que o `launchd` entrega; o
 `deploy/hunter-crawl.sh` corrige isso exportando `/opt/homebrew/bin` na primeira
 linha.
 
+## Fontes e transporte
+
+| Fonte | Transporte | Depende do Chrome |
+|---|---|---|
+| olx | CDP (`BrowserFetcher`) | sim |
+| mercadolivre | CDP (`BrowserFetcher`) | sim |
+| webmotors | CDP (`BrowserFetcher`) — PerimeterX responde 403 a HTTP puro | sim |
+| mobiauto | HTTP puro (`HTTPFetcher`) | **não** |
+
+A Mobiauto continua coletando com o Chrome fora do ar: ela fala HTTP direto, com
+o User-Agent de navegador e timeout próprio. Numa rodada em que o Chrome não
+sobe, as três primeiras fontes falham e a Mobiauto entrega normalmente — o painel
+de saúde mostra exatamente isso, fonte a fonte.
+
+Fonte que responde algo diferente de `200`, ou que devolve página de desafio no
+lugar do payload esperado, falha alto e vira erro da rodada; não passa em branco.
+
 ## Fase 2
 
-O plano das próximas fontes (Webmotors, iCarros, Instagram e Facebook
+O plano das próximas fontes (Webmotors, Mobiauto, Instagram e Facebook
 Marketplace), da marcação de reanúncio e da expiração de anúncios sumidos está em
 `docs/superpowers/plans/2026-08-09-harley-hunter-fase2.md`.

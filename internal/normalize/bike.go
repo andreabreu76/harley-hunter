@@ -11,7 +11,7 @@ import (
 var compactor = strings.NewReplacer(" ", "", "-", "", ".", "", "/", "")
 
 func Fold(s string) string {
-	decomposed := norm.NFD.String(strings.ToLower(s))
+	decomposed := norm.NFKD.String(s)
 	var b strings.Builder
 	for _, r := range decomposed {
 		if unicode.Is(unicode.Mn, r) {
@@ -19,20 +19,58 @@ func Fold(s string) string {
 		}
 		b.WriteRune(r)
 	}
-	return strings.Join(strings.Fields(b.String()), " ")
+	return strings.Join(strings.Fields(strings.ToLower(b.String())), " ")
 }
 
 func DetectBike(text string) (string, string) {
+	return DetectBikeIn(text, text)
+}
+
+func DetectBikeIn(title, text string) (string, string) {
+	name := headline(title)
+	if body := captionBody(text); body != "" {
+		if bike, variant := detectBike(body, name); namesAFamily(bike) {
+			return bike, variant
+		}
+	}
+	return detectBike(text, name)
+}
+
+func headline(title string) string {
+	if body := captionBody(title); body != "" {
+		return body
+	}
+	return title
+}
+
+func captionBody(text string) string {
+	at := strings.IndexByte(text, '#')
+	if at < 0 {
+		return ""
+	}
+	return strings.TrimSpace(text[:at])
+}
+
+func namesAFamily(bike string) bool {
+	switch bike {
+	case model.BikeStreetGlide, model.BikeRoadGlide, model.BikeElectraGlide, model.BikeUltra:
+		return true
+	}
+	return false
+}
+
+func detectBike(text, name string) (string, string) {
 	t := Fold(text)
 	compact := compactor.Replace(t)
+	named := Fold(name)
 
 	switch {
 	case containsAny(t, compact, "electra glide", "electraglide", "flht"):
 		return model.BikeElectraGlide, model.VariantUnknown
 	case containsAny(t, compact, "road glide", "roadglide", "fltrx"):
-		return model.BikeRoadGlide, detectVariant(t, compact, "fltrxse", "fltrxs")
+		return model.BikeRoadGlide, detectVariant(t, compact, named, "fltrxse", "fltrxs")
 	case containsAny(t, compact, "street glide", "streetglide", "stglide", "flhx"):
-		return model.BikeStreetGlide, detectVariant(t, compact, "flhxse", "flhxs")
+		return model.BikeStreetGlide, detectVariant(t, compact, named, "flhxse", "flhxs")
 	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic"):
 		return model.BikeUltra, model.VariantUnknown
 	case isHarley(t) && containsAny(t, compact, "touring", "1690", "1745", "rushmore"):
@@ -42,14 +80,23 @@ func DetectBike(text string) (string, string) {
 	}
 }
 
-func detectVariant(t, compact, cvoCode, specialCode string) string {
-	if strings.Contains(t, "cvo") || containsCode(compact, cvoCode) {
+func detectVariant(t, compact, named, cvoCode, specialCode string) string {
+	if containsWord(named, "cvo") || containsCode(compact, cvoCode) {
 		return model.VariantCVO
 	}
-	if containsAny(t, compact, "special", "especial") || containsCode(compact, specialCode) {
+	if containsWord(t, "special", "especial") || containsCode(compact, specialCode) {
 		return model.VariantSpecial
 	}
 	return model.VariantBase
+}
+
+func containsWord(text string, words ...string) bool {
+	for _, w := range words {
+		if wordIndex(text, w) >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func containsCode(compact, code string) bool {

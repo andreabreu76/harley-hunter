@@ -83,3 +83,10 @@ func TestLocationTier(t *testing.T) {
 		})
 	}
 }
+
+func TestParseLocationReadsAStyledCity(t *testing.T) {
+	city, state := ParseLocation("𝐂𝐮𝐫𝐢𝐭𝐢𝐛𝐚 - 𝐏𝐑")
+	if city != "curitiba" || state != "PR" {
+		t.Errorf("ParseLocation = %q/%q, want curitiba/PR", city, state)
+	}
+}

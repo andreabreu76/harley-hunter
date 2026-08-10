@@ -40,42 +40,10 @@ func NewMercadoLivre(fetcher PageFetcher, baseURLs []string) *MercadoLivre {
 	return &MercadoLivre{fetcher: fetcher, baseURLs: baseURLs, delay: mlRequestDelay}
 }
 
-func (m *MercadoLivre) Name() string { return "mercadolivre" }
+func (m *MercadoLivre) Name() string { return model.SourceMercadoLivre }
 
 func (m *MercadoLivre) Fetch(ctx context.Context) ([]model.RawListing, error) {
-	var all []model.RawListing
-	for i, url := range m.baseURLs {
-		if err := ctx.Err(); err != nil {
-			return all, err
-		}
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return all, ctx.Err()
-			case <-time.After(m.delay):
-			}
-		}
-
-		listings, err := m.fetchOne(ctx, url)
-		if err != nil {
-			return all, err
-		}
-		all = append(all, listings...)
-	}
-	return all, nil
-}
-
-func (m *MercadoLivre) fetchOne(ctx context.Context, url string) ([]model.RawListing, error) {
-	page, err := m.fetcher.FetchPage(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-
-	listings, err := ParseMercadoLivre(strings.NewReader(page))
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", url, err)
-	}
-	return listings, nil
+	return fetchPages(ctx, m.fetcher, m.baseURLs, m.delay, ParseMercadoLivre)
 }
 
 func ParseMercadoLivre(body io.Reader) ([]model.RawListing, error) {
@@ -111,7 +79,7 @@ func ParseMercadoLivre(body io.Reader) ([]model.RawListing, error) {
 		image, _ := card.Find(mlImageSelector).First().Attr("src")
 
 		listings = append(listings, model.RawListing{
-			Source:       "mercadolivre",
+			Source:       model.SourceMercadoLivre,
 			ExternalID:   strings.ReplaceAll(id, "-", ""),
 			URL:          mlCanonicalURL(href),
 			Title:        title,

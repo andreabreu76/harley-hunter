@@ -32,42 +32,10 @@ func NewOLX(fetcher PageFetcher, baseURLs []string) *OLX {
 	return &OLX{fetcher: fetcher, baseURLs: baseURLs, delay: olxRequestDelay}
 }
 
-func (o *OLX) Name() string { return "olx" }
+func (o *OLX) Name() string { return model.SourceOLX }
 
 func (o *OLX) Fetch(ctx context.Context) ([]model.RawListing, error) {
-	var all []model.RawListing
-	for i, url := range o.baseURLs {
-		if err := ctx.Err(); err != nil {
-			return all, err
-		}
-		if i > 0 {
-			select {
-			case <-ctx.Done():
-				return all, ctx.Err()
-			case <-time.After(o.delay):
-			}
-		}
-
-		listings, err := o.fetchOne(ctx, url)
-		if err != nil {
-			return all, err
-		}
-		all = append(all, listings...)
-	}
-	return all, nil
-}
-
-func (o *OLX) fetchOne(ctx context.Context, url string) ([]model.RawListing, error) {
-	page, err := o.fetcher.FetchPage(ctx, url)
-	if err != nil {
-		return nil, err
-	}
-
-	listings, err := ParseOLX(strings.NewReader(page))
-	if err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", url, err)
-	}
-	return listings, nil
+	return fetchPages(ctx, o.fetcher, o.baseURLs, o.delay, ParseOLX)
 }
 
 type olxAd struct {
@@ -80,6 +48,7 @@ type olxAd struct {
 		Municipality string `json:"municipality"`
 		UF           string `json:"uf"`
 	} `json:"locationDetails"`
+	Date   int64 `json:"date"`
 	Images []struct {
 		Original string `json:"original"`
 	} `json:"images"`
@@ -111,7 +80,7 @@ func ParseOLX(body io.Reader) ([]model.RawListing, error) {
 			continue
 		}
 		listings = append(listings, model.RawListing{
-			Source:       "olx",
+			Source:       model.SourceOLX,
 			ExternalID:   ad.ListID.String(),
 			URL:          ad.URL,
 			Title:        ad.Subject,
@@ -121,6 +90,7 @@ func ParseOLX(body io.Reader) ([]model.RawListing, error) {
 			KmText:       olxProperty(ad, "mileage"),
 			LocationText: olxLocation(ad),
 			ImageURL:     olxImage(ad),
+			PublishedAt:  olxPublishedAt(ad),
 		})
 	}
 
@@ -217,6 +187,14 @@ func olxLocation(ad olxAd) string {
 		return city + " - " + uf
 	}
 	return city
+}
+
+func olxPublishedAt(ad olxAd) *time.Time {
+	if ad.Date <= 0 {
+		return nil
+	}
+	at := time.Unix(ad.Date, 0).UTC()
+	return &at
 }
 
 func olxImage(ad olxAd) string {

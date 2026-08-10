@@ -64,3 +64,56 @@ func TestParsePrice(t *testing.T) {
 		})
 	}
 }
+
+func TestConsulteDoesNotKillAPriceThatIsWrittenOut(t *testing.T) {
+	caption := "✅R$ 86.700,00\n🇧🇷ENTREGA PARA TODO O BRASIL\n☎️👉CONSULTE 41 995617244"
+
+	cents, ok := ParsePrice(caption)
+	if !ok {
+		t.Fatalf("ParsePrice returned no price: CONSULTE is a call to the phone, not an absent price")
+	}
+	if cents != 8670000 {
+		t.Errorf("ParsePrice = %d, want 8670000", cents)
+	}
+}
+
+func TestPriceStillAbsentWhenTheAdOnlySaysToAsk(t *testing.T) {
+	cases := []string{
+		"a combinar",
+		"Preço a combinar",
+		"valor sob consulta",
+		"CONSULTE",
+		"consulte o vendedor",
+	}
+	for _, text := range cases {
+		if cents, ok := ParsePrice(text); ok {
+			t.Errorf("ParsePrice(%q) = %d, true, want absent", text, cents)
+		}
+	}
+}
+
+func TestCombinarStillVetoesAThousandsFigure(t *testing.T) {
+	if cents, ok := ParsePrice("entrada 20 mil, restante a combinar"); ok {
+		t.Errorf("ParsePrice = %d, true, want absent: without an explicit R$ the ad is still asking to talk", cents)
+	}
+}
+
+func TestFullwidthPriceParsesOnceItIsFolded(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+	}{
+		{"Ｒ＄ ８６.７００,００", 8670000},
+		{"Ｒ＄ ８６.７００", 8670000},
+		{"𝟖𝟔.𝟕𝟎𝟎", 8670000},
+	}
+	for _, c := range cases {
+		if cents, ok := ParsePrice(c.in); ok {
+			t.Errorf("ParsePrice(%q) = %d without folding: the pipeline hands ParsePrice raw text", c.in, cents)
+		}
+		cents, ok := ParsePrice(Fold(c.in))
+		if !ok || cents != c.want {
+			t.Errorf("ParsePrice(Fold(%q)) = %d, %v, want %d, true", c.in, cents, ok, c.want)
+		}
+	}
+}

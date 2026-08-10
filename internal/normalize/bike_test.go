@@ -54,3 +54,197 @@ func TestFoldRemovesAccents(t *testing.T) {
 		t.Errorf("Fold = %q, want %q", got, "sao jose dos pinhais")
 	}
 }
+
+const poisonedStreetGlideSpecial = `Harley-Davidson STREET GLIDE SPECIAL 114 - 2022 - R$ 124.990,00
+
+Apenas 13.800 KM
+
+ÚNICO DONO
+TODAS REVISÕES NA HARLEY-DAVIDSON
+
+#motosite
+#harleydavidson
+#harleydavidsonstreetglide
+#streetglide
+#roadglide
+#harleytouring
+#cvo
+#specialstreetglide`
+
+const poisonedStreetGlide = `Alerta de pão quente.
+🏍️ Street Glide
+📅ANO: 2020/20
+📌KM: 18.000
+💰R$ 107.000,00
+
+🏪Estamos disponíveis 24 horas.
+
+#streetglide #harleydavidson #roadglide #roadking #harley bagger softail sportster dyna motorcycle hd harleylife baggernation streetglidespecial harleydavidsonmotorcycles harleydavidsondaily motorcycles custom performancebagger baggers bikelife cvo roadglidespecial fatboy harleysofinstagram harleys electraglide harleydavidsonindonesia vicla roadglidenation`
+
+func TestDetectBikeIgnoresTheHashtagFooter(t *testing.T) {
+	bike, variant := DetectBike(poisonedStreetGlideSpecial)
+	if bike != model.BikeStreetGlide {
+		t.Errorf("bike = %q, want street_glide: #roadglide in the footer is not the bike being sold", bike)
+	}
+	if variant != model.VariantSpecial {
+		t.Errorf("variant = %q, want special: #cvo in the footer is not the trim being sold", variant)
+	}
+}
+
+func TestDetectBikeIgnoresTheKeywordTailAfterTheHashtags(t *testing.T) {
+	bike, _ := DetectBike(poisonedStreetGlide)
+	if bike != model.BikeStreetGlide {
+		t.Errorf("bike = %q, want street_glide: the caption body says Street Glide and the tail is keyword stuffing", bike)
+	}
+}
+
+func TestDetectBikeStillReadsACaptionThatIsOnlyHashtags(t *testing.T) {
+	cases := []struct {
+		text string
+		want string
+	}{
+		{"#streetglide", model.BikeStreetGlide},
+		{"#harleydavidson #roadglide", model.BikeRoadGlide},
+		{"vendo barata #electraglide", model.BikeElectraGlide},
+	}
+	for _, c := range cases {
+		if bike, _ := DetectBike(c.text); bike != c.want {
+			t.Errorf("DetectBike(%q) = %q, want %q: hashtags are the only signal here", c.text, bike, c.want)
+		}
+	}
+}
+
+func TestDetectBikeKeepsTheBodyWhenItNamesTheFamily(t *testing.T) {
+	text := "Harley Davidson Electra Glide 2014 impecável #streetglide #harley"
+	if bike, _ := DetectBike(text); bike != model.BikeElectraGlide {
+		t.Errorf("bike = %q, want electra_glide: the body wins over the footer", bike)
+	}
+}
+
+func TestFoldFlattensStyledUnicodeToPlainLetters(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"✅ 𝐕𝐄𝐍𝐃𝐈𝐃𝐎", "✅ vendido"},
+		{"𝗕𝗜𝗚 𝗧𝗪𝗜𝗡", "big twin"},
+		{"𝐄𝐬𝐩𝐞𝐜𝐢𝐚𝐥𝐢𝐳𝐚𝐝𝐚 𝐇𝐀𝐑𝐋𝐄𝐘-𝐃𝐀𝐕𝐈𝐃𝐒𝐎𝐍 𝐞𝐦 𝐉𝐨𝐚̃𝐨 𝐏𝐞𝐬𝐬𝐨𝐚.", "especializada harley-davidson em joao pessoa."},
+		{"São Paulo", "sao paulo"},
+		{"HARLEY-DAVIDSON", "harley-davidson"},
+	}
+	for _, c := range cases {
+		if got := Fold(c.in); got != c.want {
+			t.Errorf("Fold(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDetectBikeReadsAStyledCaption(t *testing.T) {
+	if bike, variant := DetectBike("𝐒𝐭𝐫𝐞𝐞𝐭 𝐆𝐥𝐢𝐝𝐞 𝐒𝐩𝐞𝐜𝐢𝐚𝐥 2015"); bike != model.BikeStreetGlide || variant != model.VariantSpecial {
+		t.Errorf("DetectBike = %q/%q, want street_glide/special", bike, variant)
+	}
+}
+
+func TestDetectBikeDoesNotReadEspecializadaAsTheSpecialTrim(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{
+			"instagram caption in styled unicode",
+			"À VENDA!\nStreet Glide 2013, motor TC103 com 57.000km rodados.\n\nR$ 63.000,00.\n\n𝐄𝐬𝐩𝐞𝐜𝐢𝐚𝐥𝐢𝐳𝐚𝐝𝐚 𝐇𝐀𝐑𝐋𝐄𝐘-𝐃𝐀𝐕𝐈𝐃𝐒𝐎𝐍 𝐞𝐦 𝐉𝐨𝐚̃𝐨 𝐏𝐞𝐬𝐬𝐨𝐚.",
+		},
+		{
+			"webmotors dealer blurb",
+			"HARLEY-DAVIDSON STREET GLIDE Em estado de nova, sem detalhes. Revisão recente. Oficina Especializada em Harley Davidson. Troca de óleo, Revisão, Venda e instalação de Peças.",
+		},
+		{
+			"dealer describing itself",
+			"HARLEY-DAVIDSON ROAD GLIDE A SwissMoto é especializada na compra e venda de motos premium.",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, variant := DetectBike(c.in)
+			if variant != model.VariantBase {
+				t.Errorf("variant = %q, want base: a specialised workshop is not the Special trim", variant)
+			}
+		})
+	}
+}
+
+func TestDetectBikeStillReadsTheSpecialTrimAsAWholeWord(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"Street Glide Special 2014", model.VariantSpecial},
+		{"HD STREET GLIDE ESPECIAL 15/15 IMPECAVEL", model.VariantSpecial},
+		{"Harley-Davidson Road-Glide Special 2015", model.VariantSpecial},
+		{"HARLEY-DAVIDSON STREET GLIDE SPECIAL 114", model.VariantSpecial},
+		{"Street Glide special, unico dono", model.VariantSpecial},
+		{"Harley FLHXS 2015", model.VariantSpecial},
+	}
+	for _, c := range cases {
+		if _, variant := DetectBike(c.in); variant != c.want {
+			t.Errorf("DetectBike(%q) variant = %q, want %q", c.in, variant, c.want)
+		}
+	}
+}
+
+func TestDetectBikeInReadsCVOOffTheTitleNotTheAccessoryList(t *testing.T) {
+	cases := []struct {
+		id    int
+		title string
+		body  string
+	}{
+		{224, "HARLEY-DAVIDSON STREET GLIDE", "Harley-Davidson Street Glide FLHX 2014 - Projeto Rushmore - Cor Exclusiva de Fabrica. Pedaleiras de descanso para estrada (Highway Pegs). Ponteiras CVO. Plataforma do garupa com capas originais Harley-Davidson."},
+		{254, "HARLEY-DAVIDSON STREET GLIDE", "STREET GLIDE CVO EDICAO ESPECIAL , MOTO SEM DETALHES , REVISADA NA CONCESSIONARIA , GARANTIA DE FABRICA"},
+		{256, "HARLEY-DAVIDSON STREET GLIDE", `Moto impecavel na mecanica e estetica. Guidao customer 12" Manetes da CVO Filtro K&N Remap e Estagio I feito na Gumps Garage`},
+		{258, "HARLEY-DAVIDSON STREET GLIDE", "PECA RARA! Unica no Brasil! Totalmente customizada com pintura flake, Roda dianteira cromada V-rod, pincas BREMBO, maleiros CVO, guidao Diablo Classic"},
+		{264, "HARLEY-DAVIDSON ROAD GLIDE", "DOCUMENTACAO 2026 QUITADA. ACESSORIOS: EMBLEMA HD CVO NO TANQUE E CARENAGEM FRONTAL LATERAIS CVO EM EXCELENTE ESTADO"},
+	}
+	for _, c := range cases {
+		_, variant := DetectBikeIn(c.title, c.title+" "+c.body)
+		if variant == model.VariantCVO {
+			t.Errorf("listing %d: variant = cvo, want anything else: the title says only %q and cvo is an accessory in the body", c.id, c.title)
+		}
+	}
+}
+
+func TestDetectBikeInKeepsTheRealCVOs(t *testing.T) {
+	cases := []struct {
+		id    int
+		title string
+		body  string
+	}{
+		{38, "HARLEY-DAVIDSON FL TRXSE ROAD GLIDE CVO 2019", "Harley-Davidson Road Glide Fltrxse"},
+		{51, "CVO STREET GLIDE 121 NOVISSIMA ", "Harley-Davidson Road Glide Fltrxstse"},
+		{106, "HARLEY DAVIDSON ROAD GLIDE CVO 2019 ", "Harley-Davidson Road Glide Fltrxse"},
+		{183, "Harley-davidson Cvo Road Glide St", "2026 0 Km"},
+		{196, "Cvo Road Glide Fltrxse", "2018 50.000 Km"},
+		{210, "Harley Davidson Road Glide Cvo", "2018 36.000 Km"},
+		{399, "🔥 HARLEY-DAVIDSON ROAD GLIDE CVO 2019 🔥", "🔥 HARLEY-DAVIDSON ROAD GLIDE CVO 2019 🔥 Exclusividade, luxo e performance"},
+		{419, "Harley Road Glide CVO impecável 2018 R$139.900,00.", "Harley Road Glide CVO impecável 2018 R$139.900,00."},
+		{420, "ROAD GLIDE CVO ST 121 - 2025 - R$ 279.990,00", "ROAD GLIDE CVO ST 121 - 2025 - R$ 279.990,00 apenas 1.400 KM"},
+	}
+	for _, c := range cases {
+		_, variant := DetectBikeIn(c.title, c.title+" "+c.body)
+		if variant != model.VariantCVO {
+			t.Errorf("listing %d: variant = %q, want cvo: the title names it", c.id, variant)
+		}
+	}
+}
+
+func TestDetectBikeInReadsTheCVOCodeFromAnywhere(t *testing.T) {
+	_, variant := DetectBikeIn("HARLEY-DAVIDSON ROAD GLIDE", "HARLEY-DAVIDSON ROAD GLIDE Harley-Davidson Road Glide FLTRXSE 2019")
+	if variant != model.VariantCVO {
+		t.Errorf("variant = %q, want cvo: the trim code is unambiguous wherever it sits", variant)
+	}
+}
+
+func TestDetectBikeTreatsABareNameAsItsOwnTitle(t *testing.T) {
+	if _, variant := DetectBike("CVO Street Glide 2015"); variant != model.VariantCVO {
+		t.Errorf("variant = %q, want cvo: a bare model name is a title", variant)
+	}
+}

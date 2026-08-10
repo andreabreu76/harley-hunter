@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/crawl"
+	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/format"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
@@ -32,6 +34,16 @@ var watchedRegions = []struct {
 
 const otherRegionName = "Outras regiões"
 
+const (
+	repostLabel    = "possível reanúncio"
+	crossPostLabel = "anunciada também em "
+)
+
+const (
+	publishedLabel = "anúncio de "
+	radarLabel     = "no radar "
+)
+
 type server struct {
 	store      *store.Store
 	sources    []string
@@ -42,8 +54,30 @@ type server struct {
 
 type regionGroup struct {
 	Name    string
-	Rows    []store.Row
+	Cards   []card
 	Scanned int
+}
+
+type card struct {
+	Row    store.Row
+	Closed bool
+	Repost *repost
+	Fipe   *fipeView
+}
+
+type fipeView struct {
+	Label   string
+	Year    int
+	Cents   int64
+	Base    bool
+	Gap     string
+	Bargain bool
+}
+
+type repost struct {
+	OtherID int64
+	Cheaper bool
+	Label   string
 }
 
 type sourceHealth struct {
@@ -71,11 +105,15 @@ func NewServer(s *store.Store, sources []string) http.Handler {
 		"money":      func(cents *int64) string { return format.Thousands(*cents / 100) },
 		"moneyCents": func(cents int64) string { return format.Thousands(cents / 100) },
 		"km":         func(value *int) string { return format.Thousands(int64(*value)) },
+		"phone":      func(digits *string) string { return format.Phone(*digits) },
+		"phoneLink":  phoneLink,
 		"priceDrop":  priceDrop,
 		"location":   location,
 		"stateLabel": stateLabel,
 		"scanned":    scannedLabel,
 		"datetime":   datetime,
+		"datetimeOf": func(at *time.Time) string { return datetime(*at) },
+		"age":        age,
 	}
 
 	parse := func(page string) *template.Template {
@@ -122,16 +160,125 @@ func (s *server) list(view listView) http.HandlerFunc {
 			fail(w, http.StatusInternalServerError, err)
 			return
 		}
+		groups, err := s.store.RepostGroups()
+		if err != nil {
+			fail(w, http.StatusInternalServerError, err)
+			return
+		}
+
+		refs := s.fipeTable()
+		cards := make([]card, 0, len(rows))
+		for _, row := range rows {
+			cards = append(cards, newCard(row, siblingsOf(row, groups), refs))
+		}
 		s.render(w, s.listTmpl, map[string]any{
 			"Title":  view.title,
 			"Nav":    view.nav,
-			"Groups": groupByRegion(rows, scanned),
+			"Groups": groupByRegion(cards, scanned),
 			"Empty":  view.empty,
 		})
 	}
 }
 
-func groupByRegion(rows []store.Row, scanned map[string]int) []regionGroup {
+const bargainGapPercent = 5
+
+func newCard(row store.Row, siblings []store.Row, refs *fipe.Table) card {
+	return card{
+		Row:    row,
+		Closed: row.Status == store.StatusGone,
+		Repost: repostOf(row, siblings),
+		Fipe:   fipeOf(row, refs),
+	}
+}
+
+func fipeOf(row store.Row, refs *fipe.Table) *fipeView {
+	if row.Year == nil {
+		return nil
+	}
+	ref, ok := refs.Lookup(row.Bike, row.Variant, *row.Year)
+	if !ok {
+		return nil
+	}
+
+	view := &fipeView{Label: ref.Label, Year: ref.Year, Cents: ref.PriceCents, Base: ref.Base}
+	if row.PriceCents == nil || ref.PriceCents <= 0 {
+		return view
+	}
+
+	gap := float64(ref.PriceCents-*row.PriceCents) * 100 / float64(ref.PriceCents)
+	percent := int(math.Round(math.Abs(gap)))
+	if percent == 0 {
+		return view
+	}
+	if gap > 0 {
+		view.Gap = fmt.Sprintf("%d%% abaixo", percent)
+		view.Bargain = percent >= bargainGapPercent
+		return view
+	}
+	view.Gap = fmt.Sprintf("%d%% acima", percent)
+	return view
+}
+
+func (s *server) fipeTable() *fipe.Table {
+	refs, err := s.store.FipeReferences()
+	if err != nil {
+		log.Printf("web: reading fipe references: %v", err)
+		return fipe.NewTable(nil)
+	}
+	return fipe.NewTable(refs)
+}
+
+func siblingsOf(row store.Row, groups map[string][]store.Row) []store.Row {
+	if row.Fingerprint == "" || row.Km == nil {
+		return nil
+	}
+	group := groups[row.Fingerprint]
+	siblings := make([]store.Row, 0, len(group))
+	for _, other := range group {
+		if other.ID != row.ID {
+			siblings = append(siblings, other)
+		}
+	}
+	return siblings
+}
+
+func repostOf(row store.Row, siblings []store.Row) *repost {
+	if len(siblings) == 0 {
+		return nil
+	}
+	twin := siblings[0]
+	previous, ok := previousSighting(row, siblings)
+	if ok {
+		twin = previous
+	}
+
+	badge := &repost{OtherID: twin.ID, Label: twinLabel(row, twin)}
+	if ok && row.PriceCents != nil && twin.PriceCents != nil && *row.PriceCents < *twin.PriceCents {
+		badge.Cheaper = true
+		badge.Label = fmt.Sprintf("%s · R$ %s a menos", badge.Label,
+			format.Thousands((*twin.PriceCents-*row.PriceCents+50)/100))
+	}
+	return badge
+}
+
+func twinLabel(row, twin store.Row) string {
+	if row.Source != twin.Source {
+		return crossPostLabel + twin.Source
+	}
+	return repostLabel
+}
+
+func previousSighting(row store.Row, siblings []store.Row) (store.Row, bool) {
+	for _, other := range siblings {
+		if other.FirstSeenAt.Before(row.FirstSeenAt) ||
+			(other.FirstSeenAt.Equal(row.FirstSeenAt) && other.ID < row.ID) {
+			return other, true
+		}
+	}
+	return store.Row{}, false
+}
+
+func groupByRegion(cards []card, scanned map[string]int) []regionGroup {
 	groups := make([]regionGroup, 0, len(watchedRegions)+1)
 	watched := make(map[string]bool, len(watchedRegions))
 	for _, region := range watchedRegions {
@@ -146,20 +293,20 @@ func groupByRegion(rows []store.Row, scanned map[string]int) []regionGroup {
 		}
 	}
 
-	for _, row := range rows {
+	for _, c := range cards {
 		placed := false
 		for i, region := range watchedRegions {
-			if row.State == region.Code {
-				groups[i].Rows = append(groups[i].Rows, row)
+			if c.Row.State == region.Code {
+				groups[i].Cards = append(groups[i].Cards, c)
 				placed = true
 				break
 			}
 		}
 		if !placed {
-			other.Rows = append(other.Rows, row)
+			other.Cards = append(other.Cards, c)
 		}
 	}
-	if len(other.Rows) > 0 {
+	if len(other.Cards) > 0 {
 		groups = append(groups, other)
 	}
 	return groups
@@ -176,7 +323,14 @@ func (s *server) detail(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, err)
 		return
 	}
-	s.render(w, s.detailTmpl, map[string]any{"Title": row.Title, "Nav": "", "Row": row, "Points": points})
+	siblings, err := s.store.RepostsOf(row.Fingerprint, row.ID)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.render(w, s.detailTmpl, map[string]any{
+		"Title": row.Title, "Nav": "", "Card": newCard(row, siblings, s.fipeTable()), "Points": points,
+	})
 }
 
 func (s *server) setState(w http.ResponseWriter, r *http.Request) {
@@ -292,6 +446,14 @@ func priceDrop(r store.Row) string {
 		r.FirstSeenAt.In(time.Local).Format("02/01"))
 }
 
+func phoneLink(digits *string) template.URL {
+	dialable := format.PhoneLink(*digits)
+	if dialable == "" {
+		return ""
+	}
+	return template.URL("tel:" + dialable)
+}
+
 func location(r store.Row) string {
 	if r.City == "" {
 		return r.State
@@ -326,14 +488,28 @@ func datetime(t time.Time) string {
 	return t.In(time.Local).Format("02/01/2006 15:04")
 }
 
+func age(r store.Row) string {
+	if r.PublishedAt != nil {
+		return publishedLabel + elapsedLabel(time.Since(*r.PublishedAt))
+	}
+	return radarLabel + humanSince(time.Since(r.FirstSeenAt))
+}
+
 func humanSince(elapsed time.Duration) string {
+	if elapsed < time.Minute {
+		return "agora"
+	}
+	return "há " + elapsedLabel(elapsed)
+}
+
+func elapsedLabel(elapsed time.Duration) string {
 	switch {
 	case elapsed < time.Minute:
 		return "agora"
 	case elapsed < time.Hour:
-		return fmt.Sprintf("há %dmin", int(elapsed.Minutes()))
+		return fmt.Sprintf("%dmin", int(elapsed.Minutes()))
 	case elapsed < 48*time.Hour:
-		return fmt.Sprintf("há %dh", int(elapsed.Hours()))
+		return fmt.Sprintf("%dh", int(elapsed.Hours()))
 	}
-	return fmt.Sprintf("há %dd", int(elapsed.Hours())/24)
+	return fmt.Sprintf("%dd", int(elapsed.Hours())/24)
 }

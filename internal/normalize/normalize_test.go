@@ -2,6 +2,7 @@ package normalize
 
 import (
 	"testing"
+	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
 )
@@ -192,5 +193,80 @@ func TestFingerprintIsStableAndDiscriminating(t *testing.T) {
 	different.Km = &farKm
 	if Fingerprint(base) == Fingerprint(different) {
 		t.Error("listings with very different mileage should not share a fingerprint")
+	}
+}
+
+func TestNormalizeReadsTheSellerPhoneFromTheAdText(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "webmotors",
+		ExternalID: "2977981",
+		Title:      "HARLEY-DAVIDSON STREET GLIDE",
+		RawText:    "Interessados chame nesse contato: 11 98241-3574 Wilson",
+	}
+	l := Normalize(raw)
+
+	if l.Phone == nil || *l.Phone != "11982413574" {
+		t.Errorf("Phone = %v, want 11982413574", l.Phone)
+	}
+}
+
+func TestNormalizeLeavesThePhoneNilWhenTheAdHasNone(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "webmotors",
+		ExternalID: "3020437",
+		Title:      "HARLEY-DAVIDSON STREET GLIDE",
+		RawText:    "Impecável. Simplesmente sem detalhes. 43.500 km por R$ 74.900",
+	}
+	l := Normalize(raw)
+
+	if l.Phone != nil {
+		t.Errorf("Phone = %q, want nil", *l.Phone)
+	}
+}
+
+func TestNormalizeCarriesThePublishedDateInUTC(t *testing.T) {
+	brt := time.FixedZone("BRT", -3*3600)
+	published := time.Date(2026, 8, 4, 9, 49, 53, 0, brt)
+	raw := model.RawListing{
+		Source:      "olx",
+		ExternalID:  "1499153946",
+		Title:       "Harley Street Glide",
+		PublishedAt: &published,
+	}
+	l := Normalize(raw)
+
+	if l.PublishedAt == nil {
+		t.Fatal("PublishedAt is nil, want the date the source published")
+	}
+	if !l.PublishedAt.Equal(published) {
+		t.Errorf("PublishedAt = %s, want %s", l.PublishedAt, published)
+	}
+	if l.PublishedAt.Location() != time.UTC {
+		t.Errorf("PublishedAt zone = %s, want UTC", l.PublishedAt.Location())
+	}
+}
+
+func TestNormalizeLeavesThePublishedDateNilWhenTheSourceOmitsIt(t *testing.T) {
+	l := Normalize(model.RawListing{Source: "mobiauto", ExternalID: "31389122", Title: "Harley Street Glide"})
+	if l.PublishedAt != nil {
+		t.Errorf("PublishedAt = %v, want nil", l.PublishedAt)
+	}
+}
+
+func TestNormalizeReadsAStyledUnicodeCaption(t *testing.T) {
+	l := Normalize(model.RawListing{
+		Source:     "instagram",
+		ExternalID: "styled",
+		RawText:    "𝐒𝐭𝐫𝐞𝐞𝐭 𝐆𝐥𝐢𝐝𝐞 𝐒𝐩𝐞𝐜𝐢𝐚𝐥 𝟐𝟎𝟏𝟒 em 𝐂𝐮𝐫𝐢𝐭𝐢𝐛𝐚",
+	})
+
+	if l.Bike != model.BikeStreetGlide || l.Variant != model.VariantSpecial {
+		t.Errorf("bike/variant = %q/%q, want street_glide/special", l.Bike, l.Variant)
+	}
+	if l.Year == nil || *l.Year != 2014 {
+		t.Errorf("Year = %v, want 2014 read through the folded text", l.Year)
+	}
+	if l.City != "curitiba" {
+		t.Errorf("City = %q, want curitiba", l.City)
 	}
 }

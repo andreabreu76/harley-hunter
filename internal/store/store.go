@@ -28,9 +28,12 @@ type Row struct {
 	City            string
 	State           string
 	ImageURL        string
+	Phone           *string
 	Verdict         model.Verdict
 	UserState       string
+	Status          string
 	Fingerprint     string
+	PublishedAt     *time.Time
 	FirstSeenAt     time.Time
 	LastSeenAt      time.Time
 	FirstPriceCents *int64
@@ -57,12 +60,14 @@ CREATE TABLE IF NOT EXISTS listings (
     city TEXT NOT NULL DEFAULT '',
     state TEXT NOT NULL DEFAULT '',
     image_url TEXT NOT NULL DEFAULT '',
+    phone TEXT,
     verdict TEXT NOT NULL,
     verdict_reason TEXT NOT NULL DEFAULT '{}',
     fingerprint TEXT NOT NULL DEFAULT '',
     user_state TEXT NOT NULL DEFAULT 'new',
     notified INTEGER NOT NULL DEFAULT 0,
     status TEXT NOT NULL DEFAULT 'active',
+    published_at TIMESTAMP,
     first_seen_at TIMESTAMP NOT NULL,
     last_seen_at TIMESTAMP NOT NULL,
     UNIQUE (source, external_id)
@@ -91,6 +96,19 @@ CREATE TABLE IF NOT EXISTS source_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_source_runs_source ON source_runs (source, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS fipe_refs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL,
+    label TEXT NOT NULL,
+    bike TEXT NOT NULL,
+    variant TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    price_cents INTEGER NOT NULL,
+    month TEXT NOT NULL DEFAULT '',
+    fetched_at TIMESTAMP NOT NULL,
+    UNIQUE (bike, variant, year)
+);
 `
 
 func Open(path string) (*Store, error) {
@@ -103,6 +121,10 @@ func Open(path string) (*Store, error) {
 		db.Close()
 		return nil, fmt.Errorf("applying schema: %w", err)
 	}
+	if err := addMissingColumns(db); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return &Store{db: db}, nil
 }
 
@@ -112,8 +134,8 @@ func (s *Store) Close() error {
 
 const rowColumns = `
     l.id, l.source, l.external_id, l.url, l.title, l.bike, l.variant, l.year,
-    l.price_cents, l.km, l.city, l.state, l.image_url, l.verdict, l.user_state,
-    l.fingerprint, l.first_seen_at, l.last_seen_at,
+    l.price_cents, l.km, l.city, l.state, l.image_url, l.phone, l.verdict, l.user_state,
+    l.status, l.fingerprint, l.published_at, l.first_seen_at, l.last_seen_at,
     (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC, p.id ASC LIMIT 1)
 `
 
@@ -121,8 +143,8 @@ func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
 	var r Row
 	err := scanner.Scan(&r.ID, &r.Source, &r.ExternalID, &r.URL, &r.Title, &r.Bike,
 		&r.Variant, &r.Year, &r.PriceCents, &r.Km, &r.City, &r.State, &r.ImageURL,
-		&r.Verdict, &r.UserState, &r.Fingerprint, &r.FirstSeenAt, &r.LastSeenAt,
-		&r.FirstPriceCents)
+		&r.Phone, &r.Verdict, &r.UserState, &r.Status, &r.Fingerprint, &r.PublishedAt,
+		&r.FirstSeenAt, &r.LastSeenAt, &r.FirstPriceCents)
 	return r, err
 }
 

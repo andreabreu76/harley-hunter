@@ -26,7 +26,7 @@ func Normalize(raw model.RawListing) model.Listing {
 		ImageURL:   raw.ImageURL,
 	}
 
-	l.Bike, l.Variant = DetectBike(full)
+	l.Bike, l.Variant = DetectBikeIn(raw.Title, full)
 
 	if cents, ok := ParsePrice(raw.PriceText); ok {
 		l.PriceCents = &cents
@@ -49,6 +49,15 @@ func Normalize(raw model.RawListing) model.Listing {
 	l.City, l.State = ParseLocation(raw.LocationText)
 	if l.City == "" {
 		l.City, l.State = locationFromText(full)
+	}
+
+	if phone, ok := ParsePhone(full); ok {
+		l.Phone = &phone
+	}
+
+	if raw.PublishedAt != nil {
+		at := raw.PublishedAt.UTC()
+		l.PublishedAt = &at
 	}
 
 	l.Fingerprint = Fingerprint(l)
