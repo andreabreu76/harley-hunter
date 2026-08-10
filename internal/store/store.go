@@ -96,6 +96,19 @@ CREATE TABLE IF NOT EXISTS source_runs (
 );
 
 CREATE INDEX IF NOT EXISTS idx_source_runs_source ON source_runs (source, started_at DESC);
+
+CREATE TABLE IF NOT EXISTS fipe_refs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL,
+    label TEXT NOT NULL,
+    bike TEXT NOT NULL,
+    variant TEXT NOT NULL,
+    year INTEGER NOT NULL,
+    price_cents INTEGER NOT NULL,
+    month TEXT NOT NULL DEFAULT '',
+    fetched_at TIMESTAMP NOT NULL,
+    UNIQUE (bike, variant, year)
+);
 `
 
 func Open(path string) (*Store, error) {
