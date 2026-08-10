@@ -191,12 +191,87 @@ func TestNotifyKeepsBothWhenMileageIsUnknown(t *testing.T) {
 	}
 }
 
+func TestNotifyKeepsBothWhenTheSameSourceRepeatsAFingerprint(t *testing.T) {
+	s := openStore(t)
+
+	first := withKm(matchListing("wm-237"), 53000)
+	first.Source = "webmotors"
+	first.Fingerprint = "aa11bb22cc33dd44"
+
+	second := withKm(matchListing("wm-251"), 53118)
+	second.Source = "webmotors"
+	second.Fingerprint = first.Fingerprint
+
+	for _, l := range []model.Listing{first, second} {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+	}
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 2 {
+		t.Errorf("sent = %d, want 2: two active ads on one source are two bikes", sent)
+	}
+
+	pending, err := s.PendingNotifications(10)
+	if err != nil {
+		t.Fatalf("PendingNotifications: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("%d rows left pending, want 0: both were alerted", len(pending))
+	}
+}
+
+func TestNotifyKeepsTheSecondSameSourceAdAfterACrossPost(t *testing.T) {
+	s := openStore(t)
+
+	onOlx := withKm(matchListing("olx-237"), 53000)
+	onOlx.Fingerprint = "aa11bb22cc33dd44"
+
+	mirrored := withKm(matchListing("wm-237"), 53000)
+	mirrored.Source = "webmotors"
+	mirrored.Fingerprint = onOlx.Fingerprint
+
+	otherBike := withKm(matchListing("wm-251"), 53118)
+	otherBike.Source = "webmotors"
+	otherBike.Fingerprint = onOlx.Fingerprint
+
+	for _, l := range []model.Listing{onOlx, mirrored, otherBike} {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+	}
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 2 {
+		t.Errorf("sent = %d, want 2: the olx cross-post must not silence a second webmotors bike", sent)
+	}
+
+	pending, err := s.PendingNotifications(10)
+	if err != nil {
+		t.Fatalf("PendingNotifications: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("%d rows left pending, want 0", len(pending))
+	}
+}
+
 func TestNotifyDedupSkipsDoNotConsumeCapSlots(t *testing.T) {
 	s := openStore(t)
 
+	crossPosted := []string{"olx", "mercadolivre", "webmotors"}
 	var listings []model.Listing
-	for i := 0; i < 3; i++ {
+	for i, src := range crossPosted {
 		l := withKm(matchListing(fmt.Sprintf("dup-%d", i)), 90195)
+		l.Source = src
 		l.Fingerprint = "b5778ec73e0cac33"
 		listings = append(listings, l)
 	}
@@ -217,7 +292,7 @@ func TestNotifyDedupSkipsDoNotConsumeCapSlots(t *testing.T) {
 		t.Fatalf("Notify: %v", err)
 	}
 	if sent != 5 {
-		t.Errorf("sent = %d, want 5: the two dedup skips must not eat cap slots", sent)
+		t.Errorf("sent = %d, want 5: the two cross-post skips must not eat cap slots", sent)
 	}
 
 	pending, err := s.PendingNotifications(50)
@@ -225,7 +300,7 @@ func TestNotifyDedupSkipsDoNotConsumeCapSlots(t *testing.T) {
 		t.Fatalf("PendingNotifications: %v", err)
 	}
 	if len(pending) != 1 {
-		t.Errorf("%d rows left pending, want 1: 3 duplicates collapse to 1 send, 5 sends spend the cap", len(pending))
+		t.Errorf("%d rows left pending, want 1: 3 cross-posts collapse to 1 send, 5 sends spend the cap", len(pending))
 	}
 }
 

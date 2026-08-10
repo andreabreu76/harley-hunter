@@ -72,3 +72,44 @@ func (s *Store) RepostGroups() (map[string][]Row, error) {
 	}
 	return groups, nil
 }
+
+const silencedTwinFilter = `status = ? AND verdict = 'match' AND notified = 1
+          AND km IS NOT NULL AND fingerprint <> ''
+          AND id NOT IN (
+              SELECT MIN(id) FROM listings
+              WHERE status = ? AND verdict = 'match'
+                AND km IS NOT NULL AND fingerprint <> ''
+              GROUP BY fingerprint, source)`
+
+func (s *Store) SilencedTwinIDs() ([]int64, error) {
+	rows, err := s.db.Query(
+		"SELECT id FROM listings WHERE "+silencedTwinFilter+" ORDER BY id", StatusActive, StatusActive)
+	if err != nil {
+		return nil, fmt.Errorf("querying silenced twins: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scanning silenced twin: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+func (s *Store) RequeueSilencedTwins() (int, error) {
+	res, err := s.db.Exec(
+		"UPDATE listings SET notified = 0 WHERE "+silencedTwinFilter,
+		StatusActive, StatusActive)
+	if err != nil {
+		return 0, fmt.Errorf("requeueing silenced twins: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("counting requeued twins: %w", err)
+	}
+	return int(affected), nil
+}

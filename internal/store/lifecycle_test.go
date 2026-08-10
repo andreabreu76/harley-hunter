@@ -493,3 +493,128 @@ func TestRepostGroupsOnlyCarriesFingerprintsSeenMoreThanOnce(t *testing.T) {
 		t.Error("a group without mileage must not be reported")
 	}
 }
+
+func TestRequeueSilencedTwinsFreesTheYoungerOfTwoOnOneSource(t *testing.T) {
+	s := openTemp(t)
+
+	twin := func(id string, km int) model.Listing {
+		l := sample(6100000)
+		l.Source = "webmotors"
+		l.ExternalID = id
+		l.Km = &km
+		l.Fingerprint = "aa11bb22cc33dd44"
+		return l
+	}
+
+	older, err := s.Upsert(twin("237", 53000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	younger, err := s.Upsert(twin("251", 53118), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	for _, id := range []int64{older.ID, younger.ID} {
+		if err := s.MarkNotified(id, nil); err != nil {
+			t.Fatalf("MarkNotified: %v", err)
+		}
+	}
+
+	freed, err := s.RequeueSilencedTwins()
+	if err != nil {
+		t.Fatalf("RequeueSilencedTwins: %v", err)
+	}
+	if freed != 1 {
+		t.Fatalf("freed = %d, want 1: only the younger twin was silenced", freed)
+	}
+
+	pending, err := s.PendingNotifications(10)
+	if err != nil {
+		t.Fatalf("PendingNotifications: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != younger.ID {
+		t.Errorf("pending = %+v, want just the younger twin %d", pending, younger.ID)
+	}
+}
+
+func TestSilencedTwinIDsNamesExactlyWhatTheRequeueFrees(t *testing.T) {
+	s := openTemp(t)
+
+	twin := func(id string, km int) model.Listing {
+		l := sample(6100000)
+		l.Source = "webmotors"
+		l.ExternalID = id
+		l.Km = &km
+		l.Fingerprint = "aa11bb22cc33dd44"
+		return l
+	}
+
+	var ids []int64
+	for _, l := range []model.Listing{twin("237", 53000), twin("251", 53118), twin("263", 53240)} {
+		res, err := s.Upsert(l, time.Now())
+		if err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+		if err := s.MarkNotified(res.ID, nil); err != nil {
+			t.Fatalf("MarkNotified: %v", err)
+		}
+		ids = append(ids, res.ID)
+	}
+
+	announced, err := s.SilencedTwinIDs()
+	if err != nil {
+		t.Fatalf("SilencedTwinIDs: %v", err)
+	}
+	want := ids[1:]
+	if len(announced) != len(want) || announced[0] != want[0] || announced[1] != want[1] {
+		t.Fatalf("announced = %v, want %v: the two twins the oldest ad silenced", announced, want)
+	}
+
+	freed, err := s.RequeueSilencedTwins()
+	if err != nil {
+		t.Fatalf("RequeueSilencedTwins: %v", err)
+	}
+	if freed != len(announced) {
+		t.Errorf("freed = %d, want the %d ids already announced", freed, len(announced))
+	}
+
+	after, err := s.SilencedTwinIDs()
+	if err != nil {
+		t.Fatalf("SilencedTwinIDs after the requeue: %v", err)
+	}
+	if len(after) != 0 {
+		t.Errorf("still silenced = %v, want none left", after)
+	}
+}
+
+func TestRequeueSilencedTwinsLeavesACrossPostAlone(t *testing.T) {
+	s := openTemp(t)
+
+	posted := func(source, id string) model.Listing {
+		l := sample(6100000)
+		l.Source = source
+		l.ExternalID = id
+		km := 53000
+		l.Km = &km
+		l.Fingerprint = "aa11bb22cc33dd44"
+		return l
+	}
+
+	for _, l := range []model.Listing{posted("olx", "1"), posted("mercadolivre", "2")} {
+		res, err := s.Upsert(l, time.Now())
+		if err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+		if err := s.MarkNotified(res.ID, nil); err != nil {
+			t.Fatalf("MarkNotified: %v", err)
+		}
+	}
+
+	freed, err := s.RequeueSilencedTwins()
+	if err != nil {
+		t.Fatalf("RequeueSilencedTwins: %v", err)
+	}
+	if freed != 0 {
+		t.Errorf("freed = %d, want 0: a cross-post was correctly deduped", freed)
+	}
+}

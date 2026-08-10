@@ -88,7 +88,7 @@ func TestOpenAddsMissingColumnsToADatabaseFromTheEarlierSchema(t *testing.T) {
 		t.Fatalf("GetRow: %v", err)
 	}
 	if row.Phone == nil || *row.Phone != phone {
-		t.Fatalf("Phone = %v, want %q", row.Phone, phone)
+		t.Fatalf("Phone = %s, want %q", describe(row.Phone), phone)
 	}
 }
 
@@ -145,5 +145,110 @@ func TestOpenAddsThePublishedDateColumnToADatabaseFromTheEarlierSchema(t *testin
 	}
 	if row.PublishedAt == nil || !row.PublishedAt.Equal(published) {
 		t.Fatalf("PublishedAt = %v, want %s", row.PublishedAt, published)
+	}
+}
+
+func TestOpenAnchorsAlreadyNotifiedRowsAtTheirCurrentPrice(t *testing.T) {
+	path := openLegacy(t)
+
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopening legacy database: %v", err)
+	}
+	if _, err := legacy.Exec("UPDATE listings SET notified = 1, price_cents = 7200000"); err != nil {
+		t.Fatalf("marking the legacy row notified: %v", err)
+	}
+	legacy.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { s.Close() })
+
+	rows, err := s.ListByVerdict("match")
+	if err != nil {
+		t.Fatalf("ListByVerdict: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("got %d rows, want the legacy row", len(rows))
+	}
+	if rows[0].NotifiedPriceCents == nil || *rows[0].NotifiedPriceCents != 7200000 {
+		t.Errorf("NotifiedPriceCents = %s, want the price already communicated",
+			describe(rows[0].NotifiedPriceCents))
+	}
+}
+
+func TestOpenLeavesNoColumnBehindWhenItsSeedFails(t *testing.T) {
+	path := openLegacy(t)
+
+	original := addedColumns
+	t.Cleanup(func() { addedColumns = original })
+
+	bogus := original[len(original)-1]
+	bogus.column = "seed_fails"
+	bogus.ddl = "ALTER TABLE listings ADD COLUMN seed_fails INTEGER"
+	bogus.seed = "UPDATE listings SET seed_fails = there_is_no_such_column"
+	addedColumns = append(original[:len(original):len(original)], bogus)
+
+	if _, err := Open(path); err == nil {
+		t.Fatal("Open must fail when the seed of a new column is invalid")
+	}
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopening the database: %v", err)
+	}
+	defer db.Close()
+
+	present, err := hasColumn(db, "listings", bogus.column)
+	if err != nil {
+		t.Fatalf("hasColumn: %v", err)
+	}
+	if present {
+		t.Error("the column survived a failed seed, so the next Open will never seed it")
+	}
+}
+
+func TestOpenDoesNotReanchorAPendingDropOnASecondRun(t *testing.T) {
+	path := openLegacy(t)
+
+	legacy, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopening legacy database: %v", err)
+	}
+	if _, err := legacy.Exec("UPDATE listings SET notified = 1, price_cents = 7200000"); err != nil {
+		t.Fatalf("marking the legacy row notified: %v", err)
+	}
+	legacy.Close()
+
+	first, err := Open(path)
+	if err != nil {
+		t.Fatalf("first Open: %v", err)
+	}
+	first.Close()
+
+	dropped, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopening to drop the price: %v", err)
+	}
+	if _, err := dropped.Exec("UPDATE listings SET price_cents = 6800000"); err != nil {
+		t.Fatalf("dropping the price: %v", err)
+	}
+	dropped.Close()
+
+	second, err := Open(path)
+	if err != nil {
+		t.Fatalf("second Open: %v", err)
+	}
+	t.Cleanup(func() { second.Close() })
+
+	rows, err := second.ListByVerdict("match")
+	if err != nil {
+		t.Fatalf("ListByVerdict: %v", err)
+	}
+	if rows[0].NotifiedPriceCents == nil || *rows[0].NotifiedPriceCents != 7200000 {
+		t.Errorf("NotifiedPriceCents = %s, want the anchor to survive so the drop stays pending",
+			describe(rows[0].NotifiedPriceCents))
 	}
 }

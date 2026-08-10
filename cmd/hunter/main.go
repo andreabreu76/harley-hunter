@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,8 +42,13 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "repair-silenced":
+		if err := runRepairSilenced(cfg); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: hunter [-config path] <crawl|serve>")
+		fmt.Fprintln(os.Stderr, "usage: hunter [-config path] <crawl|serve|repair-silenced>")
 		os.Exit(2)
 	}
 }
@@ -69,7 +75,7 @@ func runCrawl(cfg config.Config) error {
 	}
 	printReport(cfg, report, time.Since(started))
 	refreshFipe(db)
-	sendAlerts(cfg, db, report.Drops)
+	sendAlerts(cfg, db)
 	return nil
 }
 
@@ -96,8 +102,45 @@ func runServe(cfg config.Config) error {
 	return http.ListenAndServe(addr, web.NewServer(db, cfg.Sources))
 }
 
-func sendAlerts(cfg config.Config, db *store.Store, drops []crawl.PriceDrop) {
-	shown, err := crawl.Notify(context.Background(), db, notify.NewMacOS(), cfg.Crawl.MaxAlertsPerRun, drops)
+func runRepairSilenced(cfg config.Config) error {
+	db, err := store.Open(cfg.DatabasePath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	silenced, err := db.SilencedTwinIDs()
+	if err != nil {
+		return err
+	}
+	if len(silenced) == 0 {
+		fmt.Println("no silenced listing left to free")
+		return nil
+	}
+	fmt.Printf("freeing %d silenced listings: %s\n", len(silenced), joinIDs(silenced))
+
+	freed, err := db.RequeueSilencedTwins()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("listings back in the alert queue: %d\n", freed)
+	return nil
+}
+
+func joinIDs(ids []int64) string {
+	text := make([]string, 0, len(ids))
+	for _, id := range ids {
+		text = append(text, strconv.FormatInt(id, 10))
+	}
+	return strings.Join(text, ", ")
+}
+
+func sendAlerts(cfg config.Config, db *store.Store) {
+	refs, err := db.FipeReferences()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fipe references unavailable, alerts will not rank by discount: %v\n", err)
+	}
+	shown, err := crawl.Notify(context.Background(), db, notify.NewMacOS(), cfg.Crawl.MaxAlertsPerRun, fipe.NewTable(refs))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "alerts failed after %d notifications: %v\n", shown, err)
 		return

@@ -1,6 +1,7 @@
 package store
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"time"
@@ -88,7 +89,7 @@ func TestUpsertRecordsPriceDrop(t *testing.T) {
 		t.Fatal("price drop should be reported")
 	}
 	if res.PreviousCents == nil || *res.PreviousCents != 7500000 {
-		t.Errorf("PreviousCents = %v, want 7500000", res.PreviousCents)
+		t.Errorf("PreviousCents = %s, want 7500000", describe(res.PreviousCents))
 	}
 
 	_, points, err := s.GetRow(res.ID)
@@ -123,7 +124,7 @@ func TestPendingNotificationsOnlyReturnsUnnotifiedMatches(t *testing.T) {
 		t.Fatalf("expected only the match row, got %d rows", len(pending))
 	}
 
-	if err := s.MarkNotified(res.ID); err != nil {
+	if err := s.MarkNotified(res.ID, nil); err != nil {
 		t.Fatalf("MarkNotified: %v", err)
 	}
 	pending, err = s.PendingNotifications(10)
@@ -252,7 +253,7 @@ func TestUpsertKeepsTheSellerPhone(t *testing.T) {
 		t.Fatalf("GetRow: %v", err)
 	}
 	if row.Phone == nil || *row.Phone != phone {
-		t.Fatalf("Phone = %v, want %q", row.Phone, phone)
+		t.Fatalf("Phone = %s, want %q", describe(row.Phone), phone)
 	}
 
 	l.Phone = nil
@@ -349,5 +350,256 @@ func TestUpsertLeavesThePublishedDateNilWhenNoSourceEverSentOne(t *testing.T) {
 	}
 	if row.PublishedAt != nil {
 		t.Fatalf("PublishedAt = %s, want nil", row.PublishedAt)
+	}
+}
+
+func TestMarkNotifiedAnchorsAtTheLowestPriceAnnounced(t *testing.T) {
+	s := openTemp(t)
+
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	anchor := func(cents int64) *int64 { return &cents }
+
+	if err := s.MarkNotified(res.ID, anchor(7200000)); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
+		t.Fatalf("anchor = %s, want 7200000", describe(got))
+	}
+
+	if err := s.MarkNotified(res.ID, anchor(7500000)); err != nil {
+		t.Fatalf("MarkNotified on a higher price: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
+		t.Errorf("anchor = %s, want it to stay at 7200000: a price rise is not news", describe(got))
+	}
+
+	if err := s.MarkNotified(res.ID, anchor(6800000)); err != nil {
+		t.Fatalf("MarkNotified on a lower price: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 6800000 {
+		t.Errorf("anchor = %s, want 6800000: a drop moves the anchor down", describe(got))
+	}
+
+	if err := s.MarkNotified(res.ID, nil); err != nil {
+		t.Fatalf("MarkNotified without a price: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 6800000 {
+		t.Errorf("anchor = %s, want 6800000 kept: a priceless round must not erase it", describe(got))
+	}
+}
+
+func TestMarkSilencedLeavesAPendingDropStillPending(t *testing.T) {
+	s := openTemp(t)
+
+	l := sample(7200000)
+	res, err := s.Upsert(l, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	anchored := int64(7200000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	lower := int64(6800000)
+	l.PriceCents = &lower
+	if _, err := s.Upsert(l, time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+
+	if err := s.MarkSilenced(res.ID, &lower); err != nil {
+		t.Fatalf("MarkSilenced: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
+		t.Fatalf("anchor = %s, want 7200000 kept: silencing must not announce a price for the owner",
+			describe(got))
+	}
+
+	pending, err := s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("pending = %d rows, want the drop still waiting for its round", len(pending))
+	}
+}
+
+func TestMarkSilencedAnchorsAListingThatNeverHadOne(t *testing.T) {
+	s := openTemp(t)
+
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	price := int64(7200000)
+	if err := s.MarkSilenced(res.ID, &price); err != nil {
+		t.Fatalf("MarkSilenced: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
+		t.Fatalf("anchor = %s, want 7200000: a silenced twin still needs its anchor",
+			describe(got))
+	}
+
+	pending, err := s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending = %d rows, want 0: a silenced listing leaves the queue", len(pending))
+	}
+}
+
+func describe[T any](value *T) string {
+	if value == nil {
+		return "nil"
+	}
+	return fmt.Sprintf("%v", *value)
+}
+
+func notifiedPriceOf(t *testing.T, s *Store, id int64) *int64 {
+	t.Helper()
+	row, _, err := s.GetRow(id)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	return row.NotifiedPriceCents
+}
+
+func TestPendingAlertsCarriesNewMatchesAndPriceDrops(t *testing.T) {
+	s := openTemp(t)
+
+	fresh, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	dropping := sample(7200000)
+	dropping.ExternalID = "dropping"
+	res, err := s.Upsert(dropping, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	anchored := int64(7200000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	steady := sample(7000000)
+	steady.ExternalID = "steady"
+	quiet, err := s.Upsert(steady, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	held := int64(7000000)
+	if err := s.MarkNotified(quiet.ID, &held); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	pending, err := s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 1 || pending[0].ID != fresh.ID {
+		t.Fatalf("pending = %d rows, want just the new match", len(pending))
+	}
+
+	dropped := dropping
+	lower := int64(6800000)
+	dropped.PriceCents = &lower
+	if _, err := s.Upsert(dropped, time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+
+	pending, err = s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 2 {
+		t.Fatalf("pending = %d rows, want the new match and the drop", len(pending))
+	}
+	var sawDrop bool
+	for _, row := range pending {
+		if row.ID == res.ID {
+			sawDrop = true
+		}
+		if row.ID == quiet.ID {
+			t.Error("a listing whose price did not move must stay out of the queue")
+		}
+	}
+	if !sawDrop {
+		t.Error("the drop is missing from the queue")
+	}
+}
+
+func TestPendingAlertsIgnoresADropOnAListingAlreadyGone(t *testing.T) {
+	s := openTemp(t)
+
+	l := sample(7200000)
+	res, err := s.Upsert(l, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	anchored := int64(7200000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	lower := int64(6800000)
+	l.PriceCents = &lower
+	if _, err := s.Upsert(l, time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+	if _, err := s.db.Exec("UPDATE listings SET status = ? WHERE id = ?", StatusGone, res.ID); err != nil {
+		t.Fatalf("closing the listing: %v", err)
+	}
+
+	pending, err := s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending = %d rows, want 0: a closed ad is not an opportunity", len(pending))
+	}
+}
+
+func TestPendingAlertsKeepsAMaybeOutOfTheQueueWhenItsPriceDrops(t *testing.T) {
+	s := openTemp(t)
+
+	l := sample(8000000)
+	l.Verdict = model.VerdictMaybe
+	res, err := s.Upsert(l, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	pending, err := s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending = %d rows, want 0: a maybe is not a new match", len(pending))
+	}
+
+	anchored := int64(8000000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	lower := int64(7600000)
+	l.PriceCents = &lower
+	if _, err := s.Upsert(l, time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+
+	pending, err = s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending = %d rows, want 0: only matches ring the phone", len(pending))
 	}
 }

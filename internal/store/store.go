@@ -37,6 +37,9 @@ type Row struct {
 	FirstSeenAt     time.Time
 	LastSeenAt      time.Time
 	FirstPriceCents *int64
+
+	Notified           bool
+	NotifiedPriceCents *int64
 }
 
 type PricePoint struct {
@@ -66,6 +69,7 @@ CREATE TABLE IF NOT EXISTS listings (
     fingerprint TEXT NOT NULL DEFAULT '',
     user_state TEXT NOT NULL DEFAULT 'new',
     notified INTEGER NOT NULL DEFAULT 0,
+    notified_price_cents INTEGER,
     status TEXT NOT NULL DEFAULT 'active',
     published_at TIMESTAMP,
     first_seen_at TIMESTAMP NOT NULL,
@@ -136,7 +140,8 @@ const rowColumns = `
     l.id, l.source, l.external_id, l.url, l.title, l.bike, l.variant, l.year,
     l.price_cents, l.km, l.city, l.state, l.image_url, l.phone, l.verdict, l.user_state,
     l.status, l.fingerprint, l.published_at, l.first_seen_at, l.last_seen_at,
-    (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC, p.id ASC LIMIT 1)
+    (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC, p.id ASC LIMIT 1),
+    l.notified, l.notified_price_cents
 `
 
 func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
@@ -144,7 +149,7 @@ func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
 	err := scanner.Scan(&r.ID, &r.Source, &r.ExternalID, &r.URL, &r.Title, &r.Bike,
 		&r.Variant, &r.Year, &r.PriceCents, &r.Km, &r.City, &r.State, &r.ImageURL,
 		&r.Phone, &r.Verdict, &r.UserState, &r.Status, &r.Fingerprint, &r.PublishedAt,
-		&r.FirstSeenAt, &r.LastSeenAt, &r.FirstPriceCents)
+		&r.FirstSeenAt, &r.LastSeenAt, &r.FirstPriceCents, &r.Notified, &r.NotifiedPriceCents)
 	return r, err
 }
 
@@ -170,9 +175,47 @@ func (s *Store) PendingNotifications(limit int) ([]Row, error) {
 	return collectRows(rows)
 }
 
-func (s *Store) MarkNotified(id int64) error {
-	if _, err := s.db.Exec("UPDATE listings SET notified = 1 WHERE id = ?", id); err != nil {
+func (s *Store) PendingAlerts() ([]Row, error) {
+	query := "SELECT " + rowColumns + ` FROM listings l
+        WHERE l.verdict = 'match' AND l.status = 'active'
+          AND (l.notified = 0
+               OR (l.price_cents IS NOT NULL AND l.notified_price_cents IS NOT NULL
+                   AND l.price_cents < l.notified_price_cents))
+        ORDER BY l.first_seen_at ASC, l.id ASC`
+	rows, err := s.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("querying pending alerts: %w", err)
+	}
+	defer rows.Close()
+	return collectRows(rows)
+}
+
+func (s *Store) MarkNotified(id int64, priceCents *int64) error {
+	_, err := s.db.Exec(
+		`UPDATE listings SET notified = 1,
+             notified_price_cents = CASE
+                 WHEN ? IS NULL THEN notified_price_cents
+                 WHEN notified_price_cents IS NULL THEN ?
+                 WHEN ? < notified_price_cents THEN ?
+                 ELSE notified_price_cents END
+         WHERE id = ?`,
+		priceCents, priceCents, priceCents, priceCents, id)
+	if err != nil {
 		return fmt.Errorf("marking listing as notified: %w", err)
+	}
+	return nil
+}
+
+func (s *Store) MarkSilenced(id int64, priceCents *int64) error {
+	_, err := s.db.Exec(
+		`UPDATE listings SET notified = 1,
+             notified_price_cents = CASE
+                 WHEN notified_price_cents IS NULL THEN ?
+                 ELSE notified_price_cents END
+         WHERE id = ?`,
+		priceCents, id)
+	if err != nil {
+		return fmt.Errorf("silencing listing: %w", err)
 	}
 	return nil
 }
