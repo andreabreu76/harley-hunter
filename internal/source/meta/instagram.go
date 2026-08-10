@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/andreabreu76/harley-hunter/internal/model"
@@ -17,12 +18,14 @@ import (
 )
 
 const (
-	instagramHost      = "https://www.instagram.com"
-	instagramGrid      = `main[role="main"]`
-	instagramLoginForm = "form#login_form"
-	instagramMaxPosts  = 12
-	instagramMinDelay  = 8 * time.Second
-	instagramMaxDelay  = 20 * time.Second
+	instagramHost        = "https://www.instagram.com"
+	instagramGrid        = `main[role="main"]`
+	instagramLoginForm   = "form#login_form"
+	instagramMaxPosts    = 12
+	instagramTitleRunes  = 80
+	instagramTitleTeaser = 20
+	instagramMinDelay    = 8 * time.Second
+	instagramMaxDelay    = 20 * time.Second
 )
 
 var (
@@ -93,6 +96,7 @@ func ParseInstagram(body io.Reader) ([]model.RawListing, error) {
 			Source:     model.SourceInstagram,
 			ExternalID: shortcode,
 			URL:        instagramHost + href,
+			Title:      instagramTitle(caption, shortcode),
 			RawText:    caption,
 			ImageURL:   img.AttrOr("src", ""),
 		})
@@ -108,6 +112,44 @@ func instagramShortcode(href string) string {
 		return ""
 	}
 	return match[1]
+}
+
+func instagramTitle(caption, shortcode string) string {
+	var lines []string
+	taken := 0
+	for _, candidate := range strings.Split(caption, "\n") {
+		line := strings.TrimSpace(candidate)
+		if !hasWords(line) {
+			continue
+		}
+		lines = append(lines, line)
+		if taken += len([]rune(line)); taken >= instagramTitleTeaser {
+			break
+		}
+	}
+	if len(lines) == 0 {
+		return "Instagram " + shortcode
+	}
+
+	runes := []rune(strings.Join(lines, " "))
+	if len(runes) <= instagramTitleRunes {
+		return string(runes)
+	}
+
+	head := string(runes[:instagramTitleRunes-1])
+	if at := strings.LastIndex(head, " "); at > 0 {
+		head = head[:at]
+	}
+	return strings.TrimRight(head, " ") + "…"
+}
+
+func hasWords(line string) bool {
+	for _, r := range line {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func isSold(caption string) bool {

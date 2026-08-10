@@ -10,12 +10,42 @@ import (
 )
 
 type fakeTab struct {
-	mu        sync.Mutex
-	loaded    []string
-	failOn    string
-	active    int
-	maxActive int
-	hold      time.Duration
+	mu         sync.Mutex
+	loaded     []string
+	failOn     string
+	active     int
+	maxActive  int
+	hold       time.Duration
+	id         string
+	targets    []string
+	closed     []string
+	selfClosed bool
+}
+
+func (f *fakeTab) ID() string {
+	if f.id == "" {
+		return "own"
+	}
+	return f.id
+}
+
+func (f *fakeTab) PageTargetIDs(context.Context) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.targets...), nil
+}
+
+func (f *fakeTab) CloseTargetByID(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = append(f.closed, id)
+	return nil
+}
+
+func (f *fakeTab) Close() {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.selfClosed = true
 }
 
 func (f *fakeTab) Load(_ context.Context, url string, _ time.Duration) (string, error) {
@@ -136,6 +166,79 @@ func TestBrowserFetcherNamesTheURLWhenAPageFails(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "https://test/a") {
 		t.Errorf("error = %q, want it to name the url", err)
+	}
+}
+
+func TestBrowserFetcherClosesTheTabsTheRoundOpened(t *testing.T) {
+	tab := &fakeTab{targets: []string{"owner", "own"}}
+	fetcher, _ := fetcherWithTab(tab)
+
+	if _, err := fetcher.FetchPage(context.Background(), "https://test/a"); err != nil {
+		t.Fatalf("FetchPage: %v", err)
+	}
+	tab.targets = []string{"owner", "own", "spawned-by-the-page", "another-spawn"}
+
+	if err := fetcher.ReleaseTabs(context.Background()); err != nil {
+		t.Fatalf("ReleaseTabs: %v", err)
+	}
+
+	if got, want := strings.Join(tab.closed, ","), "spawned-by-the-page,another-spawn"; got != want {
+		t.Errorf("closed %q, want %q: only what the round opened", got, want)
+	}
+	if !tab.selfClosed {
+		t.Error("the fetcher kept its own tab even though another tab was there to hold the browser open")
+	}
+}
+
+func TestBrowserFetcherNeverClosesTheLastTab(t *testing.T) {
+	tab := &fakeTab{targets: []string{"own"}}
+	fetcher, _ := fetcherWithTab(tab)
+
+	if _, err := fetcher.FetchPage(context.Background(), "https://test/a"); err != nil {
+		t.Fatalf("FetchPage: %v", err)
+	}
+	tab.targets = []string{"own", "spawned-by-the-page"}
+
+	if err := fetcher.ReleaseTabs(context.Background()); err != nil {
+		t.Fatalf("ReleaseTabs: %v", err)
+	}
+
+	if got, want := strings.Join(tab.closed, ","), "spawned-by-the-page"; got != want {
+		t.Errorf("closed %q, want %q", got, want)
+	}
+	if tab.selfClosed {
+		t.Error("the fetcher closed the only tab left: the next round cannot open one")
+	}
+}
+
+func TestBrowserFetcherLeavesAloneTheTabsItFound(t *testing.T) {
+	tab := &fakeTab{targets: []string{"owner-instagram", "owner-facebook", "own"}}
+	fetcher, _ := fetcherWithTab(tab)
+
+	if _, err := fetcher.FetchPage(context.Background(), "https://test/a"); err != nil {
+		t.Fatalf("FetchPage: %v", err)
+	}
+	if err := fetcher.ReleaseTabs(context.Background()); err != nil {
+		t.Fatalf("ReleaseTabs: %v", err)
+	}
+
+	if len(tab.closed) != 0 {
+		t.Errorf("closed %q, want nothing: those tabs were open before the round", tab.closed)
+	}
+	if !tab.selfClosed {
+		t.Error("the fetcher should hand its own tab back when the browser stays open without it")
+	}
+}
+
+func TestBrowserFetcherReleaseWithoutAnyPageIsQuiet(t *testing.T) {
+	tab := &fakeTab{targets: []string{"owner"}}
+	fetcher, opened := fetcherWithTab(tab)
+
+	if err := fetcher.ReleaseTabs(context.Background()); err != nil {
+		t.Fatalf("ReleaseTabs: %v", err)
+	}
+	if *opened != 0 {
+		t.Errorf("opened %d tabs, want 0: releasing must not open a browser it never used", *opened)
 	}
 }
 

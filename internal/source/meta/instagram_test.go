@@ -89,7 +89,7 @@ func TestParseInstagramFillsOnlyTheFieldsTheGridCarries(t *testing.T) {
 		t.Errorf("ImageURL = %q, want the thumbnail url", first.ImageURL)
 	}
 	for name, value := range map[string]string{
-		"Title": first.Title, "PriceText": first.PriceText, "YearText": first.YearText,
+		"PriceText": first.PriceText, "YearText": first.YearText,
 		"KmText": first.KmText, "LocationText": first.LocationText,
 	} {
 		if value != "" {
@@ -187,6 +187,54 @@ func TestInstagramSaleSignal(t *testing.T) {
 	for _, c := range cases {
 		if got := hasSaleSignal(c.caption); got != c.want {
 			t.Errorf("hasSaleSignal(%q) = %v, want %v", c.caption, got, c.want)
+		}
+	}
+}
+
+func TestParseInstagramGivesEveryListingATitle(t *testing.T) {
+	listings, err := ParseInstagram(fixture(t, "instagram-hashtag.html"))
+	if err != nil {
+		t.Fatalf("ParseInstagram: %v", err)
+	}
+
+	want := map[string]string{
+		"DWZCweaDb4X": "Alerta de pão quente.",
+		"DPxNH-zEZ-G": "Harley-Davidson STREET GLIDE SPECIAL 114 - 2022 - R$ 124.990,00",
+	}
+	for _, l := range listings {
+		if l.Title == "" {
+			t.Fatalf("%s has no title: the dashboard renders an invisible link", l.ExternalID)
+		}
+		if got := want[l.ExternalID]; got != "" && l.Title != got {
+			t.Errorf("%s: Title = %q, want %q", l.ExternalID, l.Title, got)
+		}
+	}
+}
+
+func TestInstagramTitle(t *testing.T) {
+	long := "Harley Davidson Street Glide Special 2015 impecável com todos os acessórios originais e revisões feitas na concessionária"
+	cases := []struct {
+		name      string
+		caption   string
+		shortcode string
+		want      string
+	}{
+		{"first line", "Alerta de pão quente. \n🏍️ Street Glide\n📅ANO: 2020/20", "ABC", "Alerta de pão quente."},
+		{"teaser line borrows the next", "Confira:\n🛵 HD Street Glide 📌 2014/2014", "ABC", "Confira: 🛵 HD Street Glide 📌 2014/2014"},
+		{"skips leading blank lines", "\n\n💰R$ 107.000,00\nStreet Glide", "ABC", "💰R$ 107.000,00 Street Glide"},
+		{"short line kept whole", "Road Glide Special", "ABC", "Road Glide Special"},
+		{"skips a divider line", "✅ DISPONÍVEL ✅️\n—————————————————\n🇺🇸 HARLEY ULTRA LIMITED 2013", "ABC", "✅ DISPONÍVEL ✅️ 🇺🇸 HARLEY ULTRA LIMITED 2013"},
+		{"long line cut at a word", long, "ABC", "Harley Davidson Street Glide Special 2015 impecável com todos os acessórios…"},
+		{"empty caption falls back", "", "DPxNH-zEZ-G", "Instagram DPxNH-zEZ-G"},
+		{"blank caption falls back", "\n   \n", "DPxNH-zEZ-G", "Instagram DPxNH-zEZ-G"},
+	}
+	for _, c := range cases {
+		got := instagramTitle(c.caption, c.shortcode)
+		if got != c.want {
+			t.Errorf("%s: instagramTitle(...) = %q, want %q", c.name, got, c.want)
+		}
+		if runes := len([]rune(got)); runes > instagramTitleRunes {
+			t.Errorf("%s: title has %d runes, want at most %d", c.name, runes, instagramTitleRunes)
 		}
 	}
 }

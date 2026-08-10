@@ -54,7 +54,10 @@ func runCrawl(cfg config.Config) error {
 	}
 	defer db.Close()
 
-	sources, err := buildSources(cfg)
+	browser := source.NewBrowserFetcher(cfg.DevtoolsURL)
+	defer releaseTabs(browser)
+
+	sources, err := buildSources(cfg, browser)
 	if err != nil {
 		return err
 	}
@@ -104,8 +107,13 @@ func sendAlerts(cfg config.Config, db *store.Store, drops []crawl.PriceDrop) {
 
 var httpOnlySources = map[string]bool{model.SourceMobiauto: true}
 
-func buildSources(cfg config.Config) ([]crawl.Source, error) {
-	browser := source.NewBrowserFetcher(cfg.DevtoolsURL)
+func releaseTabs(browser *source.BrowserFetcher) {
+	if err := browser.ReleaseTabs(context.Background()); err != nil {
+		fmt.Fprintf(os.Stderr, "browser tabs left open: %v\n", err)
+	}
+}
+
+func buildSources(cfg config.Config, browser *source.BrowserFetcher) ([]crawl.Source, error) {
 	direct := source.NewHTTPFetcher()
 	sources := make([]crawl.Source, 0, len(cfg.Sources))
 	for _, name := range cfg.Sources {
