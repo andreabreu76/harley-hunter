@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
@@ -389,6 +390,74 @@ func TestMarkNotifiedAnchorsAtTheLowestPriceAnnounced(t *testing.T) {
 	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 6800000 {
 		t.Errorf("anchor = %v, want 6800000 kept: a priceless round must not erase it", got)
 	}
+}
+
+func TestMarkSilencedLeavesAPendingDropStillPending(t *testing.T) {
+	s := openTemp(t)
+
+	l := sample(7200000)
+	res, err := s.Upsert(l, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	anchored := int64(7200000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	lower := int64(6800000)
+	l.PriceCents = &lower
+	if _, err := s.Upsert(l, time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+
+	if err := s.MarkSilenced(res.ID, &lower); err != nil {
+		t.Fatalf("MarkSilenced: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
+		t.Fatalf("anchor = %s, want 7200000 kept: silencing must not announce a price for the owner",
+			describeAnchor(got))
+	}
+
+	pending, err := s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 1 {
+		t.Errorf("pending = %d rows, want the drop still waiting for its round", len(pending))
+	}
+}
+
+func TestMarkSilencedAnchorsAListingThatNeverHadOne(t *testing.T) {
+	s := openTemp(t)
+
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	price := int64(7200000)
+	if err := s.MarkSilenced(res.ID, &price); err != nil {
+		t.Fatalf("MarkSilenced: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
+		t.Fatalf("anchor = %s, want 7200000: a silenced twin still needs its anchor",
+			describeAnchor(got))
+	}
+
+	pending, err := s.PendingAlerts()
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending = %d rows, want 0: a silenced listing leaves the queue", len(pending))
+	}
+}
+
+func describeAnchor(cents *int64) string {
+	if cents == nil {
+		return "nil"
+	}
+	return strconv.FormatInt(*cents, 10)
 }
 
 func notifiedPriceOf(t *testing.T, s *Store, id int64) *int64 {

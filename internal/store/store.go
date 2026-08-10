@@ -206,6 +206,20 @@ func (s *Store) MarkNotified(id int64, priceCents *int64) error {
 	return nil
 }
 
+func (s *Store) MarkSilenced(id int64, priceCents *int64) error {
+	_, err := s.db.Exec(
+		`UPDATE listings SET notified = 1,
+             notified_price_cents = CASE
+                 WHEN notified_price_cents IS NULL THEN ?
+                 ELSE notified_price_cents END
+         WHERE id = ?`,
+		priceCents, id)
+	if err != nil {
+		return fmt.Errorf("silencing listing: %w", err)
+	}
+	return nil
+}
+
 func (s *Store) SetUserState(id int64, state string) error {
 	if _, err := s.db.Exec("UPDATE listings SET user_state = ? WHERE id = ?", state, id); err != nil {
 		return fmt.Errorf("updating user state: %w", err)

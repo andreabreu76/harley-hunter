@@ -293,6 +293,51 @@ func TestNotifyReachesADropOnANewerListingBehindAQueueOfOlderMatches(t *testing.
 	}
 }
 
+func TestNotifyKeepsTheSilencedSideOfACrossPostDropForTheNextRound(t *testing.T) {
+	s := openStore(t)
+
+	posted := func(source, id string, cents int64) model.Listing {
+		l := withPrice(withKm(matchListing(id), 53000), cents)
+		l.Source = source
+		l.Fingerprint = "aa11bb22cc33dd44"
+		return l
+	}
+
+	for _, l := range []model.Listing{posted("olx", "1", 7200000), posted("mercadolivre", "2", 7200000)} {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert: %v", err)
+		}
+	}
+	drainAlerts(t, s)
+
+	for _, l := range []model.Listing{posted("olx", "1", 6800000), posted("mercadolivre", "2", 6800000)} {
+		if _, err := s.Upsert(l, time.Now()); err != nil {
+			t.Fatalf("Upsert after the drop: %v", err)
+		}
+	}
+
+	announced := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, announced, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("sent = %d, want 1: both sides dropping is one piece of news in the round", sent)
+	}
+
+	next := &recordingNotifier{}
+	sent, err = Notify(context.Background(), s, next, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify on the next round: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("sent = %d, want 1: silencing a cross-post must not swallow its pending drop", sent)
+	}
+	if !strings.HasPrefix(next.messages[0], "▼ R$ 4.000: ") {
+		t.Errorf("alert = %q, want the drop the silenced side was still holding", next.messages[0])
+	}
+}
+
 func TestNotifyKeepsASecondSameSourceAdWhenTheSortHoistsTheCrossPost(t *testing.T) {
 	s := openStore(t)
 

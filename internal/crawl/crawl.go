@@ -176,7 +176,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, r
 		if dedupable {
 			adsFromSource := recordSighting(sightings, key, row.Source)
 			if adsFromSource <= alerts[key] {
-				if err := s.MarkNotified(row.ID, row.PriceCents); err != nil {
+				if err := s.MarkSilenced(row.ID, row.PriceCents); err != nil {
 					return sent, err
 				}
 				continue
