@@ -41,8 +41,13 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "repair-silenced":
+		if err := runRepairSilenced(cfg); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	default:
-		fmt.Fprintln(os.Stderr, "usage: hunter [-config path] <crawl|serve>")
+		fmt.Fprintln(os.Stderr, "usage: hunter [-config path] <crawl|serve|repair-silenced>")
 		os.Exit(2)
 	}
 }
@@ -94,6 +99,21 @@ func runServe(cfg config.Config) error {
 	addr := "127.0.0.1:8080"
 	fmt.Printf("dashboard: http://%s\n", addr)
 	return http.ListenAndServe(addr, web.NewServer(db, cfg.Sources))
+}
+
+func runRepairSilenced(cfg config.Config) error {
+	db, err := store.Open(cfg.DatabasePath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	freed, err := db.RequeueSilencedTwins()
+	if err != nil {
+		return err
+	}
+	fmt.Printf("listings back in the alert queue: %d\n", freed)
+	return nil
 }
 
 func sendAlerts(cfg config.Config, db *store.Store, drops []crawl.PriceDrop) {

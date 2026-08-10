@@ -72,3 +72,24 @@ func (s *Store) RepostGroups() (map[string][]Row, error) {
 	}
 	return groups, nil
 }
+
+func (s *Store) RequeueSilencedTwins() (int, error) {
+	res, err := s.db.Exec(
+		`UPDATE listings SET notified = 0
+         WHERE status = ? AND verdict = 'match' AND notified = 1
+           AND km IS NOT NULL AND fingerprint <> ''
+           AND id NOT IN (
+               SELECT MIN(id) FROM listings
+               WHERE status = ? AND verdict = 'match'
+                 AND km IS NOT NULL AND fingerprint <> ''
+               GROUP BY fingerprint, source)`,
+		StatusActive, StatusActive)
+	if err != nil {
+		return 0, fmt.Errorf("requeueing silenced twins: %w", err)
+	}
+	affected, err := res.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("counting requeued twins: %w", err)
+	}
+	return int(affected), nil
+}
