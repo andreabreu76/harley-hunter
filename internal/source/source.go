@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
@@ -61,33 +62,72 @@ func (h *HTTPFetcher) FetchPage(ctx context.Context, url string) (string, error)
 	return string(body), nil
 }
 
+type browserTab interface {
+	Load(ctx context.Context, url string, settle time.Duration) (string, error)
+}
+
 type BrowserFetcher struct {
 	devtoolsURL string
 	settle      time.Duration
+	openTab     func(devtoolsURL string) (browserTab, error)
+	mu          sync.Mutex
+	tab         browserTab
 }
 
 func NewBrowserFetcher(devtoolsURL string) *BrowserFetcher {
 	if devtoolsURL == "" {
 		devtoolsURL = defaultDevtoolsURL
 	}
-	return &BrowserFetcher{devtoolsURL: devtoolsURL, settle: browserSettleDelay}
+	return &BrowserFetcher{devtoolsURL: devtoolsURL, settle: browserSettleDelay, openTab: openChromeTab}
 }
 
 func (b *BrowserFetcher) FetchPage(ctx context.Context, url string) (string, error) {
-	allocCtx, cancelAlloc := chromedp.NewRemoteAllocator(ctx, b.devtoolsURL)
-	defer cancelAlloc()
+	b.mu.Lock()
+	defer b.mu.Unlock()
 
-	tabCtx, cancelTab := chromedp.NewContext(allocCtx)
-	defer cancelTab()
+	if b.tab == nil {
+		tab, err := b.openTab(b.devtoolsURL)
+		if err != nil {
+			return "", fmt.Errorf("opening a tab on the browser at %s: %w", b.devtoolsURL, err)
+		}
+		b.tab = tab
+	}
 
-	var html string
-	err := chromedp.Run(tabCtx,
-		chromedp.Navigate(url),
-		chromedp.Sleep(b.settle),
-		chromedp.OuterHTML("html", &html),
-	)
+	html, err := b.tab.Load(ctx, url, b.settle)
 	if err != nil {
 		return "", fmt.Errorf("fetching %s through the browser: %w", url, err)
+	}
+	return html, nil
+}
+
+type chromeTab struct {
+	ctx context.Context
+}
+
+func openChromeTab(devtoolsURL string) (browserTab, error) {
+	allocCtx, _ := chromedp.NewRemoteAllocator(context.Background(), devtoolsURL)
+	tabCtx, _ := chromedp.NewContext(allocCtx)
+	if err := chromedp.Run(tabCtx); err != nil {
+		return nil, err
+	}
+	return &chromeTab{ctx: tabCtx}, nil
+}
+
+func (t *chromeTab) Load(ctx context.Context, url string, settle time.Duration) (string, error) {
+	runCtx, cancelRun := context.WithCancel(t.ctx)
+	defer cancelRun()
+	defer context.AfterFunc(ctx, cancelRun)()
+
+	var html string
+	if err := chromedp.Run(runCtx,
+		chromedp.Navigate(url),
+		chromedp.Sleep(settle),
+		chromedp.OuterHTML("html", &html),
+	); err != nil {
+		if callerErr := ctx.Err(); callerErr != nil {
+			return "", callerErr
+		}
+		return "", err
 	}
 	return html, nil
 }

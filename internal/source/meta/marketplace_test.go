@@ -15,7 +15,7 @@ func TestParseMarketplaceReadsEveryCard(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ParseMarketplace: %v", err)
 	}
-	if got, want := len(listings), 23; got != want {
+	if got, want := len(listings), 18; got != want {
 		t.Fatalf("len(listings) = %d, want %d", got, want)
 	}
 
@@ -66,6 +66,66 @@ func TestParseMarketplaceReadsThePriceAndCityOfEveryCard(t *testing.T) {
 		}
 		if !strings.Contains(l.LocationText, ", ") {
 			t.Errorf("%s: LocationText = %q, want city and state", l.ExternalID, l.LocationText)
+		}
+	}
+}
+
+func TestParseMarketplaceDropsPartsPricedBelowAMotorcycle(t *testing.T) {
+	listings, err := ParseMarketplace(fixture(t, "marketplace-search.html"))
+	if err != nil {
+		t.Fatalf("ParseMarketplace: %v", err)
+	}
+
+	kept := make(map[string]string, len(listings))
+	for _, l := range listings {
+		kept[l.ExternalID] = l.Title
+	}
+	for id, title := range map[string]string{
+		"1454486673386424": "Pisadeira moto Harley electra glide, R$250",
+		"2073348313246483": "Peças para Harley-Davidson, R$1",
+		"1577711237022663": "Escapamento original completo, R$1.700",
+		"2478266602648337": "Banco original Harley Davidson Street Glide, R$1.000",
+		"1719016595759927": "2013 Harley-Davidson electraglide, R$1.300",
+	} {
+		if _, found := kept[id]; found {
+			t.Errorf("%s (%s) was kept: nothing under R$ 5.000 is a motorcycle", id, title)
+		}
+	}
+}
+
+func TestParseMarketplaceAcceptsAPageOfNothingButParts(t *testing.T) {
+	page := marketplacePage(
+		cardHTML("111", "R$250", "Pisadeira moto Harley electra glide", "Curitiba, PR") +
+			cardHTML("222", "R$1.000", "Banco original Harley Davidson Street Glide", "Curitiba, PR"))
+
+	listings, err := ParseMarketplace(strings.NewReader(page))
+	if err != nil {
+		t.Fatalf("ParseMarketplace: %v: cards that were read and filtered are not a broken layout", err)
+	}
+	if len(listings) != 0 {
+		t.Errorf("len(listings) = %d, want 0", len(listings))
+	}
+}
+
+func TestMarketplacePriceCents(t *testing.T) {
+	cases := []struct {
+		text  string
+		cents int64
+		ok    bool
+	}{
+		{"R$85.990", 8599000, true},
+		{"R$1.000", 100000, true},
+		{"R$250", 25000, true},
+		{"R$1", 100, true},
+		{"R$75.990,50", 7599050, true},
+		{"R$ 68.900", 6890000, true},
+		{"Grátis", 0, false},
+		{"", 0, false},
+	}
+	for _, c := range cases {
+		cents, ok := marketplacePriceCents(c.text)
+		if ok != c.ok || cents != c.cents {
+			t.Errorf("marketplacePriceCents(%q) = %d, %v, want %d, %v", c.text, cents, ok, c.cents, c.ok)
 		}
 	}
 }
@@ -176,7 +236,7 @@ func TestMarketplaceFetchReadsEverySearch(t *testing.T) {
 	if got, want := len(fetcher.asked), 2; got != want {
 		t.Fatalf("asked %d urls, want %d", got, want)
 	}
-	if got, want := len(listings), 46; got != want {
+	if got, want := len(listings), 36; got != want {
 		t.Errorf("len(listings) = %d, want %d", got, want)
 	}
 	if got, want := marketplace.Name(), model.SourceMarketplace; got != want {
@@ -201,7 +261,7 @@ func TestMarketplaceFetchStopsAtTheLoginWall(t *testing.T) {
 	if err == nil {
 		t.Fatal("Fetch should report the login wall")
 	}
-	if got, want := len(listings), 23; got != want {
+	if got, want := len(listings), 18; got != want {
 		t.Errorf("len(listings) = %d, want %d: what was read before the wall survives", got, want)
 	}
 }

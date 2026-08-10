@@ -29,6 +29,7 @@ var (
 	instagramPostPath = regexp.MustCompile(`^/(?:p|reel)/([^/?#]+)`)
 	priceMark         = regexp.MustCompile(`(?i)r\$\s*\d`)
 	saleTerms         = []string{"vendo", "vende-se", "a venda", "disponivel", "aceito troca", "aceito proposta"}
+	soldTerms         = regexp.MustCompile(`\bvendid[oa]s?\b`)
 )
 
 type Instagram struct {
@@ -83,7 +84,7 @@ func ParseInstagram(body io.Reader) ([]model.RawListing, error) {
 
 		img := a.Find("img").First()
 		caption := strings.TrimSpace(img.AttrOr("alt", ""))
-		if caption == "" || !hasSaleSignal(caption) {
+		if caption == "" || !hasSaleSignal(caption) || isSold(caption) {
 			return true
 		}
 
@@ -107,6 +108,10 @@ func instagramShortcode(href string) string {
 		return ""
 	}
 	return match[1]
+}
+
+func isSold(caption string) bool {
+	return soldTerms.MatchString(normalize.Fold(caption))
 }
 
 func hasSaleSignal(caption string) bool {

@@ -191,6 +191,45 @@ func TestInstagramSaleSignal(t *testing.T) {
 	}
 }
 
+func TestInstagramSoldCaption(t *testing.T) {
+	cases := []struct {
+		caption string
+		want    bool
+	}{
+		{"💰 VENDIDA ✅ Aceitamos troca* ✅ Financiamento disponível*", true},
+		{"Motocicleta impecável - Revisões em dia R$ vendida", true},
+		{"Harley Davidson XL 1200 Sportster Iron - 2020 VENDIDO", true},
+		{"Os dois vendidos na mesma semana", true},
+		{"À VENDA! Street Glide 2013, motor TC103", false},
+		{"Vendo minha Road Glide 2015", false},
+		{"Vende-se Street Glide R$ 70.000", false},
+		{"Financiamento disponível em até 48x, R$ 107.000,00", false},
+		{"", false},
+	}
+	for _, c := range cases {
+		if got := isSold(c.caption); got != c.want {
+			t.Errorf("isSold(%q) = %v, want %v", c.caption, got, c.want)
+		}
+	}
+}
+
+func TestParseInstagramDropsPostsAlreadySold(t *testing.T) {
+	page := gridPage(
+		postHTML("SOLD", "STREET GLIDE SPECIAL Ano: 2019 KM: 30.700 💰 VENDIDA ✅ Aceitamos troca ✅ Financiamento disponível") +
+			postHTML("OPEN", "STREET GLIDE 2015 à venda R$ 70.000,00"))
+
+	listings, err := ParseInstagram(strings.NewReader(page))
+	if err != nil {
+		t.Fatalf("ParseInstagram: %v", err)
+	}
+	if got, want := len(listings), 1; got != want {
+		t.Fatalf("len(listings) = %d, want %d: a sold post is not a listing", got, want)
+	}
+	if got, want := listings[0].ExternalID, "OPEN"; got != want {
+		t.Errorf("ExternalID = %q, want %q", got, want)
+	}
+}
+
 func TestInstagramFetchReadsEveryHashtag(t *testing.T) {
 	urls := []string{"https://www.instagram.com/explore/tags/streetglide/", "https://www.instagram.com/explore/tags/roadglide/"}
 	page := fixtureString(t, "instagram-hashtag.html")

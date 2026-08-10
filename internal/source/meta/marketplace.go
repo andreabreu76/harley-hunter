@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/PuerkitoBio/goquery"
@@ -14,18 +15,20 @@ import (
 )
 
 const (
-	facebookHost       = "https://www.facebook.com"
-	marketplaceChrome  = `a[href="/marketplace/create/"]`
-	marketplaceCards   = `a[href^="/marketplace/item/"]`
-	marketplaceTexts   = `span[dir="auto"]`
-	marketplaceLogin   = "form#login_form"
-	marketplaceItemURL = facebookHost + "/marketplace/item/"
+	facebookHost             = "https://www.facebook.com"
+	marketplaceChrome        = `a[href="/marketplace/create/"]`
+	marketplaceCards         = `a[href^="/marketplace/item/"]`
+	marketplaceTexts         = `span[dir="auto"]`
+	marketplaceLogin         = "form#login_form"
+	marketplaceItemURL       = facebookHost + "/marketplace/item/"
+	marketplaceMinPriceCents = 500000
 )
 
 var (
 	marketplaceItemPath = regexp.MustCompile(`^/marketplace/item/(\d+)`)
 	marketplacePrice    = regexp.MustCompile(`^R\$`)
 	marketplaceCityUF   = regexp.MustCompile(`,\s*[A-Z]{2}$`)
+	marketplaceDigits   = regexp.MustCompile(`\d[\d.,]*`)
 )
 
 type Marketplace struct {
@@ -63,6 +66,7 @@ func ParseMarketplace(body io.Reader) ([]model.RawListing, error) {
 
 	cards := doc.Find(marketplaceCards)
 	var listings []model.RawListing
+	readable := 0
 	seen := make(map[string]bool)
 	cards.Each(func(_ int, a *goquery.Selection) {
 		href, _ := a.Attr("href")
@@ -75,8 +79,12 @@ func ParseMarketplace(body io.Reader) ([]model.RawListing, error) {
 		if title == "" {
 			return
 		}
-
 		seen[match[1]] = true
+		readable++
+		if cents, ok := marketplacePriceCents(price); ok && cents < marketplaceMinPriceCents {
+			return
+		}
+
 		listings = append(listings, model.RawListing{
 			Source:       model.SourceMarketplace,
 			ExternalID:   match[1],
@@ -88,10 +96,29 @@ func ParseMarketplace(body io.Reader) ([]model.RawListing, error) {
 		})
 	})
 
-	if cards.Length() > 0 && len(listings) == 0 {
+	if cards.Length() > 0 && readable == 0 {
 		return nil, fmt.Errorf("marketplace read %d cards and no listing: the card layout changed", cards.Length())
 	}
 	return listings, nil
+}
+
+func marketplacePriceCents(text string) (int64, bool) {
+	digits := marketplaceDigits.FindString(strings.ReplaceAll(text, " ", ""))
+	if digits == "" {
+		return 0, false
+	}
+	if strings.Contains(digits, ",") {
+		digits = strings.ReplaceAll(digits, ".", "")
+		digits = strings.ReplaceAll(digits, ",", ".")
+	} else {
+		digits = strings.ReplaceAll(digits, ".", "")
+	}
+
+	value, err := strconv.ParseFloat(digits, 64)
+	if err != nil {
+		return 0, false
+	}
+	return int64(value*100 + 0.5), true
 }
 
 func marketplaceFields(card *goquery.Selection) (price, title, location string) {
