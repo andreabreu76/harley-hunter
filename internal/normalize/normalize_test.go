@@ -194,3 +194,31 @@ func TestFingerprintIsStableAndDiscriminating(t *testing.T) {
 		t.Error("listings with very different mileage should not share a fingerprint")
 	}
 }
+
+func TestNormalizeReadsTheSellerPhoneFromTheAdText(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "webmotors",
+		ExternalID: "2977981",
+		Title:      "HARLEY-DAVIDSON STREET GLIDE",
+		RawText:    "Interessados chame nesse contato: 11 98241-3574 Wilson",
+	}
+	l := Normalize(raw)
+
+	if l.Phone == nil || *l.Phone != "11982413574" {
+		t.Errorf("Phone = %v, want 11982413574", l.Phone)
+	}
+}
+
+func TestNormalizeLeavesThePhoneNilWhenTheAdHasNone(t *testing.T) {
+	raw := model.RawListing{
+		Source:     "webmotors",
+		ExternalID: "3020437",
+		Title:      "HARLEY-DAVIDSON STREET GLIDE",
+		RawText:    "Impecável. Simplesmente sem detalhes. 43.500 km por R$ 74.900",
+	}
+	l := Normalize(raw)
+
+	if l.Phone != nil {
+		t.Errorf("Phone = %q, want nil", *l.Phone)
+	}
+}

@@ -65,6 +65,7 @@ type Listing struct {
 	City          string
 	State         string
 	ImageURL      string
+	Phone         *string
 	Verdict       Verdict
 	VerdictReason map[string]Verdict
 	Fingerprint   string

@@ -51,6 +51,10 @@ func Normalize(raw model.RawListing) model.Listing {
 		l.City, l.State = locationFromText(full)
 	}
 
+	if phone, ok := ParsePhone(full); ok {
+		l.Phone = &phone
+	}
+
 	l.Fingerprint = Fingerprint(l)
 	return l
 }
