@@ -185,6 +185,31 @@ func TestExpireUnseenJudgesEachSourceOnItsOwnHistory(t *testing.T) {
 	}
 }
 
+func TestExpireUnseenLeavesASourceThatNeverRanAlone(t *testing.T) {
+	s := openTemp(t)
+	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	orphan := sample(7200000)
+	orphan.Source = "instagram"
+	orphan.ExternalID = "ig-1"
+	res, err := s.Upsert(orphan, base)
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	productiveRounds(t, s, "olx", base, 4)
+
+	expired, err := s.ExpireUnseen(3)
+	if err != nil {
+		t.Fatalf("ExpireUnseen: %v", err)
+	}
+	if expired != 0 {
+		t.Fatalf("expired = %d, want 0: a source with no run history judges nothing", expired)
+	}
+	if got := statusOf(t, s, res.ID); got != StatusActive {
+		t.Errorf("status = %q, want %q", got, StatusActive)
+	}
+}
+
 func TestExpireUnseenIsIdempotent(t *testing.T) {
 	s := openTemp(t)
 	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)

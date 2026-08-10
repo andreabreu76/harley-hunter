@@ -32,7 +32,10 @@ var watchedRegions = []struct {
 
 const otherRegionName = "Outras regiões"
 
-const repostLabel = "possível reanúncio"
+const (
+	repostLabel    = "possível reanúncio"
+	crossPostLabel = "anunciada também em "
+)
 
 type server struct {
 	store      *store.Store
@@ -177,18 +180,26 @@ func repostOf(row store.Row, siblings []store.Row) *repost {
 	if len(siblings) == 0 {
 		return nil
 	}
-	badge := &repost{OtherID: siblings[0].ID, Label: repostLabel}
+	twin := siblings[0]
 	previous, ok := previousSighting(row, siblings)
-	if !ok {
-		return badge
+	if ok {
+		twin = previous
 	}
-	badge.OtherID = previous.ID
-	if row.PriceCents != nil && previous.PriceCents != nil && *row.PriceCents < *previous.PriceCents {
+
+	badge := &repost{OtherID: twin.ID, Label: twinLabel(row, twin)}
+	if ok && row.PriceCents != nil && twin.PriceCents != nil && *row.PriceCents < *twin.PriceCents {
 		badge.Cheaper = true
-		badge.Label = fmt.Sprintf("%s · R$ %s a menos", repostLabel,
-			format.Thousands((*previous.PriceCents-*row.PriceCents)/100))
+		badge.Label = fmt.Sprintf("%s · R$ %s a menos", badge.Label,
+			format.Thousands((*twin.PriceCents-*row.PriceCents+50)/100))
 	}
 	return badge
+}
+
+func twinLabel(row, twin store.Row) string {
+	if row.Source != twin.Source {
+		return crossPostLabel + twin.Source
+	}
+	return repostLabel
 }
 
 func previousSighting(row store.Row, siblings []store.Row) (store.Row, bool) {

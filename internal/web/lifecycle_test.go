@@ -34,6 +34,11 @@ func glide(id, title string, km int, cents int64, fingerprint string) model.List
 	}
 }
 
+func from(l model.Listing, source string) model.Listing {
+	l.Source = source
+	return l
+}
+
 func expireEverythingUnseen(t *testing.T, s *store.Store, base time.Time) {
 	t.Helper()
 	for i := range 4 {
@@ -119,6 +124,67 @@ func TestCheaperRepostIsFlaggedAndLinksToItsPredecessor(t *testing.T) {
 	}
 	if !strings.Contains(detail, `href="/listing/`+strconv.FormatInt(older, 10)+`"`) {
 		t.Errorf("the detail flag should link to the earlier listing, body:\n%s", detail)
+	}
+}
+
+func TestTwinOnAnotherSourceSaysWhereElseItIsListed(t *testing.T) {
+	s := emptyStore(t)
+	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	older := upsert(t, s, glide("first", "Glide No Ml", 37234, 7500000, "abc"), base)
+	newer := upsert(t, s, from(glide("second", "Glide Na Webmotors", 37234, 7100000, "abc"), "webmotors"),
+		base.Add(72*time.Hour))
+
+	_, body := get(t, NewServer(s, []string{"olx", "webmotors"}), "/")
+
+	twin := cardWith(t, body, "Glide Na Webmotors")
+	if !strings.Contains(twin, "anunciada também em olx") {
+		t.Errorf("the same ad on another site is not a repost, card:\n%s", twin)
+	}
+	if strings.Contains(twin, "possível reanúncio") {
+		t.Errorf("a cross-source twin must not claim a repost, card:\n%s", twin)
+	}
+	if !strings.Contains(twin, `href="/listing/`+strconv.FormatInt(older, 10)+`"`) {
+		t.Errorf("the flag should link to the twin, card:\n%s", twin)
+	}
+	if !strings.Contains(twin, "selo-baixa") || !strings.Contains(twin, "4.000 a menos") {
+		t.Errorf("the cheaper accent should survive the other label, card:\n%s", twin)
+	}
+
+	original := cardWith(t, body, "Glide No Ml")
+	if !strings.Contains(original, "anunciada também em webmotors") {
+		t.Errorf("the older listing should name the other site too, card:\n%s", original)
+	}
+	if !strings.Contains(original, `href="/listing/`+strconv.FormatInt(newer, 10)+`"`) {
+		t.Errorf("the older listing should link to its twin, card:\n%s", original)
+	}
+}
+
+func TestTwinOnTheSameSourceIsCalledARepost(t *testing.T) {
+	s := emptyStore(t)
+	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	upsert(t, s, glide("first", "Glide Original", 31000, 7500000, "abc"), base)
+	upsert(t, s, glide("second", "Glide Reanunciada", 31200, 7100000, "abc"), base.Add(72*time.Hour))
+
+	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	repost := cardWith(t, body, "Glide Reanunciada")
+	if !strings.Contains(repost, "possível reanúncio") {
+		t.Errorf("a second ad on the same site is the repost case, card:\n%s", repost)
+	}
+	if strings.Contains(repost, "anunciada também em") {
+		t.Errorf("a same-source twin is not a cross posting, card:\n%s", repost)
+	}
+}
+
+func TestCheaperDeltaRoundsInsteadOfTruncating(t *testing.T) {
+	s := emptyStore(t)
+	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	upsert(t, s, glide("first", "Glide Original", 31000, 7550000, "abc"), base)
+	upsert(t, s, glide("second", "Glide Reanunciada", 31200, 7100050, "abc"), base.Add(72*time.Hour))
+
+	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	repost := cardWith(t, body, "Glide Reanunciada")
+	if !strings.Contains(repost, "4.500 a menos") {
+		t.Errorf("a delta of R$ 4.499,50 should read as 4.500, card:\n%s", repost)
 	}
 }
 
