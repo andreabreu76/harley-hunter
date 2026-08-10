@@ -49,7 +49,18 @@ fonte com ambos ativos são duas motos e ambas alertam.
 
 **Interfaces:**
 - Consumes: `store.Row` (campos `Source`, `Fingerprint`, `Km`), `store.PendingNotifications`, `store.MarkNotified(id int64) error` — assinatura ainda a de hoje.
-- Produces: `crossPost(seen map[string]map[string]bool, key, source string) bool` — usada pelas tasks seguintes dentro de `Notify`.
+- Produces: a mecânica de dedup dentro de `Notify`, consumida pela Task 6.
+
+> **Emenda (durante a execução, aprovada pelo dono).** A forma com booleano por
+> fonte descrita nos steps abaixo tem um furo da mesma classe do bug-alvo,
+> encontrado e verificado empiricamente pelo implementer: o mapa só registra
+> fontes que **enviaram**, então em `olx(X)`, `wm(X)`, `wm(Y)` a moto Y é
+> silenciada para sempre — webmotors não consta como "já alertou" porque foi a
+> olx que alertou X. A forma correta conta anúncios por fonte e compara com
+> quantos alertas o fingerprint já produziu: silencia quando a contagem da
+> fonte é ≤ o número de alertas do fingerprint. Ver a tabela de quatro casos na
+> spec. Os steps abaixo ficam como registro do que foi implementado primeiro; a
+> forma final está no commit da Task 1.
 
 - [ ] **Step 1: Escrever o teste que falha**
 
@@ -925,7 +936,7 @@ o preço já comunicado quando houve queda; senão a FIPE; senão 0. Desempate p
 - Test: `internal/crawl/drop_test.go` (reescrito)
 
 **Interfaces:**
-- Consumes: `store.PendingAlerts` (Task 5), `store.MarkNotified(id, priceCents)` (Task 4), `Row.NotifiedPriceCents` (Task 3), `crossPost` (Task 1), `fipe.Table.Lookup(bike, variant string, year int) (*fipe.Reference, bool)`.
+- Consumes: `store.PendingAlerts` (Task 5), `store.MarkNotified(id, priceCents)` (Task 4), `Row.NotifiedPriceCents` (Task 3), a mecânica de dedup já no arquivo (Task 1 — preservar, não reescrever), `fipe.Table.Lookup(bike, variant string, year int) (*fipe.Reference, bool)`.
 - Produces: `func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, refs *fipe.Table) (int, error)`. O quinto parâmetro deixa de ser `[]PriceDrop` e passa a ser a tabela FIPE — `nil` é válido e vale como "sem referência".
 
 - [ ] **Step 1: Escrever o teste que falha**
@@ -1231,33 +1242,44 @@ O `if res.IsNew { report.NewMatches++ }` continua.
 
 - [ ] **Step 4: Reescrever `Notify`**
 
+> **Atenção — não reescreva a dedup.** A Task 1 já resolveu a mecânica de
+> dedup dentro deste laço (contagem de anúncios por fonte contra o número de
+> alertas do fingerprint), e ela cobre um caso de três anúncios que uma forma
+> mais simples silencia por engano. Abra `internal/crawl/crawl.go`, veja como
+> a dedup está escrita **hoje** no arquivo, e preserve essa mecânica exatamente
+> como está — variáveis, ordem das operações e a posição do check de cap depois
+> da decisão de dedup. Esta task muda quatro coisas e nada mais: (1) a fonte da
+> fila (`PendingAlerts` em vez de `PendingNotifications`), (2) a ordenação por
+> urgência, (3) a mensagem, que passa a ser de queda quando houver queda
+> pendente, (4) o segundo laço dos `drops` e o `alerted`, que somem. Se o
+> resultado do seu diff apagar a contagem por fonte, você reverteu um bug fix —
+> refaça.
+
+O esqueleto abaixo mostra **onde** as quatro mudanças entram. Os trechos
+marcados como preservados devem sair do arquivo, não daqui:
+
 ```go
 func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, refs *fipe.Table) (int, error) {
 	if limit <= 0 {
 		limit = DefaultAlertsPerRun
 	}
-	pending, err := s.PendingAlerts(limit * pendingOversample)
+	pending, err := s.PendingAlerts(limit * pendingOversample)   // (1) muda
 	if err != nil {
 		return 0, err
 	}
-	sort.SliceStable(pending, func(i, j int) bool {
+	sort.SliceStable(pending, func(i, j int) bool {              // (2) novo
 		return urgency(pending[i], refs) > urgency(pending[j], refs)
 	})
 
 	sent := 0
-	seen := make(map[string]map[string]bool, len(pending))
+	// dedup bookkeeping: preservar exatamente o que está no arquivo
 	for _, row := range pending {
-		key, dedupable := dedupKey(row)
-		if dedupable && crossPost(seen, key, row.Source) {
-			if err := s.MarkNotified(row.ID, row.PriceCents); err != nil {
-				return sent, err
-			}
-			continue
-		}
+		// decisão de dedup: preservar; no ramo que silencia, a chamada de
+		// MarkNotified agora leva row.PriceCents
 		if sent >= limit {
 			break
 		}
-		message := notify.FormatAlert(row)
+		message := notify.FormatAlert(row)                       // (3) novo
 		if previous, ok := pendingDrop(row); ok {
 			message = notify.FormatPriceDrop(row, previous)
 		}
@@ -1267,16 +1289,15 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, r
 		if err := s.MarkNotified(row.ID, row.PriceCents); err != nil {
 			return sent, err
 		}
-		if dedupable {
-			if seen[key] == nil {
-				seen[key] = make(map[string]bool)
-			}
-			seen[key][row.Source] = true
-		}
+		// registro do envio no bookkeeping de dedup: preservar
 		sent++
 	}
-	return sent, nil
+	return sent, nil                                            // (4) o laço de drops sai
 }
+```
+
+Os comentários acima são instruções para você, não código — o repo proíbe
+comentários, então nenhum deles vai para o arquivo.
 
 func pendingDrop(row store.Row) (int64, bool) {
 	if row.PriceCents == nil || row.NotifiedPriceCents == nil {

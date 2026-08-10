@@ -40,14 +40,28 @@ contexto é plausível:
 
 Dois anúncios **ativos na mesma fonte** são duas motos. Ambos alertam.
 
-Implementação em `Notify`: por fingerprint, guardar o conjunto de fontes já
-alertadas. Para uma linha com fingerprint `F` e fonte `S`:
+Implementação em `Notify`: por fingerprint, contar quantos anúncios de cada
+fonte já foram percorridos (inclusive os silenciados) e quantos alertas aquele
+fingerprint já produziu. Uma linha da fonte `S` com fingerprint `F` silencia
+quando a contagem de `S` é **menor ou igual** ao número de alertas de `F`;
+senão alerta, e a contagem de alertas sobe.
 
-| Estado de `sources[F]` | Decisão | Por quê |
+Em outras palavras, o número de alertas de um fingerprint é o maior número de
+anúncios que uma única fonte tem dele — que é o piso de quantas motos distintas
+aquele fingerprint representa.
+
+| Anúncios na ordem percorrida | Alertas | Por quê |
 |---|---|---|
-| vazio | alerta | primeira aparição |
-| contém `S` | alerta | mesma fonte, ambos ativos → outra moto |
-| não vazio e sem `S` | silencia | fonte diferente → cross-post |
+| `wm(237)`, `wm(251)` | 2 | mesma fonte, ambos ativos → duas motos |
+| `olx(X)`, `ml(X)` | 1 | fontes diferentes → cross-post da mesma moto |
+| `olx(X)`, `ml(X)`, `wm(X)` | 1 | cross-post triplo, ainda uma moto |
+| `olx(X)`, `wm(X)`, `wm(Y)` | 2 | webmotors tem dois anúncios → há uma segunda moto |
+
+A última linha é a razão de contar em vez de guardar um booleano por fonte. Com
+um booleano, `wm(Y)` seria lida como cross-post — webmotors não constaria como
+"já alertou", porque foi a olx que alertou a moto X — e a moto Y seria
+silenciada para sempre. É a mesma classe do bug 237/251, e só aparece com três
+anúncios. Encontrado durante a implementação da fase, não na triagem.
 
 O seed do fingerprint **não muda**, logo não há backfill nem risco com as
 linhas `gone` que congelaram o seed antigo.
