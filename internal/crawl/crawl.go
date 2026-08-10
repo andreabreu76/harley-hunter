@@ -176,11 +176,11 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, d
 	}
 
 	sent := 0
-	seen := make(map[string]bool, len(pending))
+	seen := make(map[string]map[string]bool, len(pending))
 	alerted := make(map[int64]bool, len(pending))
 	for _, row := range pending {
 		key, dedupable := dedupKey(row)
-		if dedupable && seen[key] {
+		if dedupable && crossPost(seen, key, row.Source) {
 			if err := s.MarkNotified(row.ID); err != nil {
 				return sent, err
 			}
@@ -196,7 +196,10 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, d
 			return sent, err
 		}
 		if dedupable {
-			seen[key] = true
+			if seen[key] == nil {
+				seen[key] = make(map[string]bool)
+			}
+			seen[key][row.Source] = true
 		}
 		alerted[row.ID] = true
 		sent++
@@ -239,6 +242,14 @@ func dedupKey(row store.Row) (string, bool) {
 		return "", false
 	}
 	return row.Fingerprint, true
+}
+
+func crossPost(seen map[string]map[string]bool, key, source string) bool {
+	sources := seen[key]
+	if len(sources) == 0 {
+		return false
+	}
+	return !sources[source]
 }
 
 func fetchSafely(ctx context.Context, src Source) (items []model.RawListing, err error) {
