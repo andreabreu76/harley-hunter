@@ -191,3 +191,60 @@ func TestDetectBikeStillReadsTheSpecialTrimAsAWholeWord(t *testing.T) {
 		}
 	}
 }
+
+func TestDetectBikeInReadsCVOOffTheTitleNotTheAccessoryList(t *testing.T) {
+	cases := []struct {
+		id    int
+		title string
+		body  string
+	}{
+		{224, "HARLEY-DAVIDSON STREET GLIDE", "Harley-Davidson Street Glide FLHX 2014 - Projeto Rushmore - Cor Exclusiva de Fabrica. Pedaleiras de descanso para estrada (Highway Pegs). Ponteiras CVO. Plataforma do garupa com capas originais Harley-Davidson."},
+		{254, "HARLEY-DAVIDSON STREET GLIDE", "STREET GLIDE CVO EDICAO ESPECIAL , MOTO SEM DETALHES , REVISADA NA CONCESSIONARIA , GARANTIA DE FABRICA"},
+		{256, "HARLEY-DAVIDSON STREET GLIDE", `Moto impecavel na mecanica e estetica. Guidao customer 12" Manetes da CVO Filtro K&N Remap e Estagio I feito na Gumps Garage`},
+		{258, "HARLEY-DAVIDSON STREET GLIDE", "PECA RARA! Unica no Brasil! Totalmente customizada com pintura flake, Roda dianteira cromada V-rod, pincas BREMBO, maleiros CVO, guidao Diablo Classic"},
+		{264, "HARLEY-DAVIDSON ROAD GLIDE", "DOCUMENTACAO 2026 QUITADA. ACESSORIOS: EMBLEMA HD CVO NO TANQUE E CARENAGEM FRONTAL LATERAIS CVO EM EXCELENTE ESTADO"},
+	}
+	for _, c := range cases {
+		_, variant := DetectBikeIn(c.title, c.title+" "+c.body)
+		if variant == model.VariantCVO {
+			t.Errorf("listing %d: variant = cvo, want anything else: the title says only %q and cvo is an accessory in the body", c.id, c.title)
+		}
+	}
+}
+
+func TestDetectBikeInKeepsTheRealCVOs(t *testing.T) {
+	cases := []struct {
+		id    int
+		title string
+		body  string
+	}{
+		{38, "HARLEY-DAVIDSON FL TRXSE ROAD GLIDE CVO 2019", "Harley-Davidson Road Glide Fltrxse"},
+		{51, "CVO STREET GLIDE 121 NOVISSIMA ", "Harley-Davidson Road Glide Fltrxstse"},
+		{106, "HARLEY DAVIDSON ROAD GLIDE CVO 2019 ", "Harley-Davidson Road Glide Fltrxse"},
+		{183, "Harley-davidson Cvo Road Glide St", "2026 0 Km"},
+		{196, "Cvo Road Glide Fltrxse", "2018 50.000 Km"},
+		{210, "Harley Davidson Road Glide Cvo", "2018 36.000 Km"},
+		{399, "🔥 HARLEY-DAVIDSON ROAD GLIDE CVO 2019 🔥", "🔥 HARLEY-DAVIDSON ROAD GLIDE CVO 2019 🔥 Exclusividade, luxo e performance"},
+		{419, "Harley Road Glide CVO impecável 2018 R$139.900,00.", "Harley Road Glide CVO impecável 2018 R$139.900,00."},
+		{420, "ROAD GLIDE CVO ST 121 - 2025 - R$ 279.990,00", "ROAD GLIDE CVO ST 121 - 2025 - R$ 279.990,00 apenas 1.400 KM"},
+	}
+	for _, c := range cases {
+		_, variant := DetectBikeIn(c.title, c.title+" "+c.body)
+		if variant != model.VariantCVO {
+			t.Errorf("listing %d: variant = %q, want cvo: the title names it", c.id, variant)
+		}
+	}
+}
+
+func TestDetectBikeInReadsTheCVOCodeFromAnywhere(t *testing.T) {
+	_, variant := DetectBikeIn("HARLEY-DAVIDSON ROAD GLIDE", "HARLEY-DAVIDSON ROAD GLIDE Harley-Davidson Road Glide FLTRXSE 2019")
+	if variant != model.VariantCVO {
+		t.Errorf("variant = %q, want cvo: the trim code is unambiguous wherever it sits", variant)
+	}
+}
+
+func TestDetectBikeTreatsABareNameAsItsOwnTitle(t *testing.T) {
+	if _, variant := DetectBike("CVO Street Glide 2015"); variant != model.VariantCVO {
+		t.Errorf("variant = %q, want cvo: a bare model name is a title", variant)
+	}
+}

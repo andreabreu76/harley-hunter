@@ -23,12 +23,24 @@ func Fold(s string) string {
 }
 
 func DetectBike(text string) (string, string) {
+	return DetectBikeIn(text, text)
+}
+
+func DetectBikeIn(title, text string) (string, string) {
+	name := headline(title)
 	if body := captionBody(text); body != "" {
-		if bike, variant := detectBike(body); namesAFamily(bike) {
+		if bike, variant := detectBike(body, name); namesAFamily(bike) {
 			return bike, variant
 		}
 	}
-	return detectBike(text)
+	return detectBike(text, name)
+}
+
+func headline(title string) string {
+	if body := captionBody(title); body != "" {
+		return body
+	}
+	return title
 }
 
 func captionBody(text string) string {
@@ -47,17 +59,18 @@ func namesAFamily(bike string) bool {
 	return false
 }
 
-func detectBike(text string) (string, string) {
+func detectBike(text, name string) (string, string) {
 	t := Fold(text)
 	compact := compactor.Replace(t)
+	named := Fold(name)
 
 	switch {
 	case containsAny(t, compact, "electra glide", "electraglide", "flht"):
 		return model.BikeElectraGlide, model.VariantUnknown
 	case containsAny(t, compact, "road glide", "roadglide", "fltrx"):
-		return model.BikeRoadGlide, detectVariant(t, compact, "fltrxse", "fltrxs")
+		return model.BikeRoadGlide, detectVariant(t, compact, named, "fltrxse", "fltrxs")
 	case containsAny(t, compact, "street glide", "streetglide", "stglide", "flhx"):
-		return model.BikeStreetGlide, detectVariant(t, compact, "flhxse", "flhxs")
+		return model.BikeStreetGlide, detectVariant(t, compact, named, "flhxse", "flhxs")
 	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic"):
 		return model.BikeUltra, model.VariantUnknown
 	case isHarley(t) && containsAny(t, compact, "touring", "1690", "1745", "rushmore"):
@@ -67,8 +80,8 @@ func detectBike(text string) (string, string) {
 	}
 }
 
-func detectVariant(t, compact, cvoCode, specialCode string) string {
-	if strings.Contains(t, "cvo") || containsCode(compact, cvoCode) {
+func detectVariant(t, compact, named, cvoCode, specialCode string) string {
+	if containsWord(named, "cvo") || containsCode(compact, cvoCode) {
 		return model.VariantCVO
 	}
 	if containsWord(t, "special", "especial") || containsCode(compact, specialCode) {
