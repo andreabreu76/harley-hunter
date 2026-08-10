@@ -36,7 +36,8 @@ func TestEvaluate(t *testing.T) {
 		{"street glide in target", listing(model.BikeStreetGlide, 2015, 7200000, "curitiba", "PR"), model.VerdictMatch},
 		{"road glide in target", listing(model.BikeRoadGlide, 2015, 7490000, "sao paulo", "SP"), model.VerdictMatch},
 		{"metro area counts", listing(model.BikeStreetGlide, 2014, 7000000, "niteroi", "RJ"), model.VerdictMatch},
-		{"electra glide rejected", listing(model.BikeElectraGlide, 2015, 7000000, "curitiba", "PR"), model.VerdictReject},
+		{"electra glide within budget is maybe", listing(model.BikeElectraGlide, 2015, 7000000, "curitiba", "PR"), model.VerdictMaybe},
+		{"ultra within budget is maybe", listing(model.BikeUltra, 2015, 7000000, "curitiba", "PR"), model.VerdictMaybe},
 		{"other brand rejected", listing(model.BikeOther, 2015, 7000000, "curitiba", "PR"), model.VerdictReject},
 		{"adjacent year is maybe", listing(model.BikeStreetGlide, 2016, 7000000, "curitiba", "PR"), model.VerdictMaybe},
 		{"missing year is maybe", listing(model.BikeStreetGlide, 0, 7000000, "curitiba", "PR"), model.VerdictMaybe},
@@ -97,5 +98,33 @@ func TestEvaluateNeverRejectsOnAbsentValuesAlone(t *testing.T) {
 	}
 	if axes[model.AxisYear] != model.VerdictMaybe || axes[model.AxisPrice] != model.VerdictMaybe {
 		t.Errorf("absent values must yield maybe, got year=%q price=%q", axes[model.AxisYear], axes[model.AxisPrice])
+	}
+}
+
+func TestTouringSiblingsNeverReachMatch(t *testing.T) {
+	for _, bike := range []string{model.BikeElectraGlide, model.BikeUltra, model.BikeTouringUnknown} {
+		verdict, axes := Evaluate(listing(bike, 2015, 7000000, "curitiba", "PR"), criteria())
+		if verdict != model.VerdictMaybe {
+			t.Errorf("%s = %q, want maybe with every other axis matching", bike, verdict)
+		}
+		if axes[model.AxisModel] != model.VerdictMaybe {
+			t.Errorf("%s model axis = %q, want maybe", bike, axes[model.AxisModel])
+		}
+		for _, axis := range []string{model.AxisYear, model.AxisPrice, model.AxisLocation} {
+			if axes[axis] != model.VerdictMatch {
+				t.Fatalf("%s axis %s = %q, want match so the case proves the model axis is the cap", bike, axis, axes[axis])
+			}
+		}
+	}
+}
+
+func TestOnlyStreetAndRoadGlideCanMatch(t *testing.T) {
+	for _, bike := range []string{model.BikeStreetGlide, model.BikeRoadGlide} {
+		if got, _ := Evaluate(listing(bike, 2015, 7000000, "curitiba", "PR"), criteria()); got != model.VerdictMatch {
+			t.Errorf("%s = %q, want match", bike, got)
+		}
+	}
+	if got, _ := Evaluate(listing(model.BikeOther, 2015, 7000000, "curitiba", "PR"), criteria()); got != model.VerdictReject {
+		t.Errorf("other = %q, want reject: the radar is not open to every Harley", got)
 	}
 }
