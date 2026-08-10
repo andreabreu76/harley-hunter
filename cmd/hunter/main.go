@@ -11,6 +11,7 @@ import (
 
 	"github.com/andreabreu76/harley-hunter/internal/config"
 	"github.com/andreabreu76/harley-hunter/internal/crawl"
+	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/notify"
 	"github.com/andreabreu76/harley-hunter/internal/source"
@@ -64,8 +65,20 @@ func runCrawl(cfg config.Config) error {
 		return err
 	}
 	printReport(cfg, report, time.Since(started))
+	refreshFipe(db)
 	sendAlerts(cfg, db, report.Drops)
 	return nil
+}
+
+func refreshFipe(db *store.Store) {
+	stored, err := fipe.Refresh(context.Background(), fipe.NewHTTPFetcher(), db, time.Now())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "fipe refresh failed: %v\n", err)
+		return
+	}
+	if stored > 0 {
+		fmt.Printf("fipe references refreshed: %d\n", stored)
+	}
 }
 
 func runServe(cfg config.Config) error {

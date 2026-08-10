@@ -12,6 +12,7 @@ import (
 	"time"
 	_ "time/tzdata"
 
+	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
@@ -95,6 +96,7 @@ var (
 	imgPattern       = regexp.MustCompile(`<img[^>]*>`)
 	agePattern       = regexp.MustCompile(`(?s)<div class="idade">(.*?)</div>`)
 	datesPattern     = regexp.MustCompile(`(?s)<div class="datas">(.*?)</div>`)
+	fipePattern      = regexp.MustCompile(`(?s)<div class="fipe[^"]*">(.*?)</div>`)
 )
 
 func flatten(s string) string {
@@ -812,4 +814,154 @@ func datesLine(body string) string {
 		return ""
 	}
 	return flatten(m[1])
+}
+
+func fipeSeed(t *testing.T, s *store.Store) {
+	t.Helper()
+	refs := []fipe.Reference{
+		{Code: "810059-4", Label: "FLHX", Bike: model.BikeStreetGlide, Variant: model.VariantBase,
+			Year: 2014, PriceCents: 6920700, Month: "agosto de 2026"},
+		{Code: "810060-8", Label: "FLHTK", Bike: model.BikeElectraGlide, Variant: model.VariantUnknown,
+			Year: 2014, PriceCents: 6822400, Month: "agosto de 2026"},
+	}
+	for _, r := range refs {
+		if err := s.SaveFipeReference(r, time.Now()); err != nil {
+			t.Fatalf("SaveFipeReference: %v", err)
+		}
+	}
+}
+
+func pricedListing(id, bike, variant string, year int, cents int64) model.Listing {
+	return model.Listing{
+		Source: "webmotors", ExternalID: id, URL: "https://example.com/" + id,
+		Title: "Harley Street Glide", Bike: bike, Variant: variant, Year: &year,
+		PriceCents: &cents, City: "curitiba", State: "PR", Verdict: model.VerdictMatch,
+	}
+}
+
+func fipeLines(body string) []string {
+	var lines []string
+	for _, m := range fipePattern.FindAllStringSubmatch(body, -1) {
+		lines = append(lines, flatten(m[1]))
+	}
+	return lines
+}
+
+func TestCardShowsTheFipeReferenceAndTheGapBelowIt(t *testing.T) {
+	s := emptyStore(t)
+	fipeSeed(t, s)
+	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6200000), time.Now())
+
+	code, body := get(t, NewServer(s, nil), "/")
+	if code != http.StatusOK {
+		t.Fatalf("GET / = %d", code)
+	}
+	got := fipeLines(body)
+	if len(got) != 1 {
+		t.Fatalf("fipe lines = %v, want one", got)
+	}
+	if !strings.Contains(got[0], "FIPE (FLHX 2014): R$ 69.207") {
+		t.Errorf("fipe line = %q, want the code, year and reference price", got[0])
+	}
+	if !strings.Contains(got[0], "10% abaixo") {
+		t.Errorf("fipe line = %q, want the gap below fipe", got[0])
+	}
+}
+
+func TestFipeGapInTheOwnersFavourGetsTheAccent(t *testing.T) {
+	s := emptyStore(t)
+	fipeSeed(t, s)
+	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6200000), time.Now())
+
+	_, body := get(t, NewServer(s, nil), "/")
+	if !strings.Contains(body, `class="fipe barganha"`) {
+		t.Errorf("a listing 10%% under fipe did not get the accent, body:\n%s", body)
+	}
+}
+
+func TestFipeGapTooSmallToMatterStaysQuiet(t *testing.T) {
+	s := emptyStore(t)
+	fipeSeed(t, s)
+	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6800000), time.Now())
+
+	_, body := get(t, NewServer(s, nil), "/")
+	if strings.Contains(body, `class="fipe barganha"`) {
+		t.Error("a listing barely under fipe got the accent, want it only from 5% down")
+	}
+	if got := fipeLines(body); len(got) != 1 || !strings.Contains(got[0], "2% abaixo") {
+		t.Errorf("fipe lines = %v, want the gap still stated", got)
+	}
+}
+
+func TestFipeAboveReferenceIsStatedWithoutAccent(t *testing.T) {
+	s := emptyStore(t)
+	fipeSeed(t, s)
+	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 7500000), time.Now())
+
+	_, body := get(t, NewServer(s, nil), "/")
+	if strings.Contains(body, `class="fipe barganha"`) {
+		t.Error("a listing above fipe got the buyer accent")
+	}
+	if got := fipeLines(body); len(got) != 1 || !strings.Contains(got[0], "8% acima") {
+		t.Errorf("fipe lines = %v, want the gap above fipe", got)
+	}
+}
+
+func TestFipeSaysWhenTheTrimIsAGuess(t *testing.T) {
+	s := emptyStore(t)
+	fipeSeed(t, s)
+	electra := pricedListing("f1", model.BikeElectraGlide, model.VariantUnknown, 2014, 6200000)
+	electra.Verdict = model.VerdictMaybe
+	upsert(t, s, electra, time.Now())
+
+	_, body := get(t, NewServer(s, nil), "/maybe")
+	got := fipeLines(body)
+	if len(got) != 1 || !strings.Contains(got[0], "FIPE (FLHTK 2014 base)") {
+		t.Errorf("fipe lines = %v, want the base-model label", got)
+	}
+}
+
+func TestNoFipeLineWhenNothingResolves(t *testing.T) {
+	s := emptyStore(t)
+	fipeSeed(t, s)
+	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2015, 6200000), time.Now())
+
+	_, body := get(t, NewServer(s, nil), "/")
+	if strings.Contains(body, "FIPE") {
+		t.Error("a year fipe does not publish still rendered a reference")
+	}
+}
+
+func TestFipeWithoutAnAskingPriceShowsTheReferenceAlone(t *testing.T) {
+	s := emptyStore(t)
+	fipeSeed(t, s)
+	year := 2014
+	upsert(t, s, model.Listing{
+		Source: "webmotors", ExternalID: "f2", URL: "https://example.com/f2",
+		Title: "Harley Street Glide", Bike: model.BikeStreetGlide, Variant: model.VariantBase,
+		Year: &year, City: "curitiba", State: "PR", Verdict: model.VerdictMatch,
+	}, time.Now())
+
+	_, body := get(t, NewServer(s, nil), "/")
+	got := fipeLines(body)
+	if len(got) != 1 || !strings.Contains(got[0], "FIPE (FLHX 2014): R$ 69.207") {
+		t.Errorf("fipe lines = %v, want the reference alone", got)
+	}
+	if strings.Contains(strings.Join(got, " "), "abaixo") || strings.Contains(strings.Join(got, " "), "acima") {
+		t.Errorf("fipe lines = %v, want no gap without an asking price", got)
+	}
+}
+
+func TestFipeReferenceNeverMovesTheVerdict(t *testing.T) {
+	s := emptyStore(t)
+	fipeSeed(t, s)
+	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6200000), time.Now())
+
+	rows, err := s.ListByVerdict(model.VerdictMatch)
+	if err != nil {
+		t.Fatalf("ListByVerdict: %v", err)
+	}
+	if len(rows) != 1 || rows[0].Verdict != model.VerdictMatch {
+		t.Errorf("rows = %v, want the verdict untouched by the reference", rows)
+	}
 }

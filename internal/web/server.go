@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/crawl"
+	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/format"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
@@ -60,6 +62,16 @@ type card struct {
 	Row    store.Row
 	Closed bool
 	Repost *repost
+	Fipe   *fipeView
+}
+
+type fipeView struct {
+	Label   string
+	Year    int
+	Cents   int64
+	Base    bool
+	Gap     string
+	Bargain bool
 }
 
 type repost struct {
@@ -154,9 +166,10 @@ func (s *server) list(view listView) http.HandlerFunc {
 			return
 		}
 
+		refs := s.fipeTable()
 		cards := make([]card, 0, len(rows))
 		for _, row := range rows {
-			cards = append(cards, newCard(row, siblingsOf(row, groups)))
+			cards = append(cards, newCard(row, siblingsOf(row, groups), refs))
 		}
 		s.render(w, s.listTmpl, map[string]any{
 			"Title":  view.title,
@@ -167,8 +180,52 @@ func (s *server) list(view listView) http.HandlerFunc {
 	}
 }
 
-func newCard(row store.Row, siblings []store.Row) card {
-	return card{Row: row, Closed: row.Status == store.StatusGone, Repost: repostOf(row, siblings)}
+const bargainGapPercent = 5
+
+func newCard(row store.Row, siblings []store.Row, refs *fipe.Table) card {
+	return card{
+		Row:    row,
+		Closed: row.Status == store.StatusGone,
+		Repost: repostOf(row, siblings),
+		Fipe:   fipeOf(row, refs),
+	}
+}
+
+func fipeOf(row store.Row, refs *fipe.Table) *fipeView {
+	if row.Year == nil {
+		return nil
+	}
+	ref, ok := refs.Lookup(row.Bike, row.Variant, *row.Year)
+	if !ok {
+		return nil
+	}
+
+	view := &fipeView{Label: ref.Label, Year: ref.Year, Cents: ref.PriceCents, Base: ref.Base}
+	if row.PriceCents == nil || ref.PriceCents <= 0 {
+		return view
+	}
+
+	gap := float64(ref.PriceCents-*row.PriceCents) * 100 / float64(ref.PriceCents)
+	percent := int(math.Round(math.Abs(gap)))
+	if percent == 0 {
+		return view
+	}
+	if gap > 0 {
+		view.Gap = fmt.Sprintf("%d%% abaixo", percent)
+		view.Bargain = percent >= bargainGapPercent
+		return view
+	}
+	view.Gap = fmt.Sprintf("%d%% acima", percent)
+	return view
+}
+
+func (s *server) fipeTable() *fipe.Table {
+	refs, err := s.store.FipeReferences()
+	if err != nil {
+		log.Printf("web: reading fipe references: %v", err)
+		return fipe.NewTable(nil)
+	}
+	return fipe.NewTable(refs)
 }
 
 func siblingsOf(row store.Row, groups map[string][]store.Row) []store.Row {
@@ -272,7 +329,7 @@ func (s *server) detail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.render(w, s.detailTmpl, map[string]any{
-		"Title": row.Title, "Nav": "", "Card": newCard(row, siblings), "Points": points,
+		"Title": row.Title, "Nav": "", "Card": newCard(row, siblings, s.fipeTable()), "Points": points,
 	})
 }
 

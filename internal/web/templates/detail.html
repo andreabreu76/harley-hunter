@@ -15,6 +15,7 @@
       {{with stateLabel $card.Row.UserState}} · {{.}}{{end}}
     </div>
     <div class="idade">{{age $card.Row}}</div>
+    {{with $card.Fipe}}<div class="fipe{{if .Bargain}} barganha{{end}}">FIPE ({{.Label}} {{.Year}}{{if .Base}} base{{end}}): R$ {{moneyCents .Cents}}{{with .Gap}} · {{.}}{{end}}</div>{{end}}
     <div class="datas">
       {{if $card.Row.PublishedAt}}publicado em {{datetimeOf $card.Row.PublishedAt}} · {{end}}no radar desde {{datetime $card.Row.FirstSeenAt}}
     </div>

@@ -27,6 +27,7 @@
         {{with stateLabel .Row.UserState}} · {{.}}{{end}}
       </div>
       <div class="idade">{{age .Row}}</div>
+      {{with .Fipe}}<div class="fipe{{if .Bargain}} barganha{{end}}">FIPE ({{.Label}} {{.Year}}{{if .Base}} base{{end}}): R$ {{moneyCents .Cents}}{{with .Gap}} · {{.}}{{end}}</div>{{end}}
       <div class="links">
         <a href="{{.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio</a>
         {{if .Row.Phone}} · <a class="fone" href="{{phoneLink .Row.Phone}}">{{phone .Row.Phone}}</a>{{end}}
