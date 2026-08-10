@@ -23,6 +23,31 @@ func Fold(s string) string {
 }
 
 func DetectBike(text string) (string, string) {
+	if body := captionBody(text); body != "" {
+		if bike, variant := detectBike(body); namesAFamily(bike) {
+			return bike, variant
+		}
+	}
+	return detectBike(text)
+}
+
+func captionBody(text string) string {
+	at := strings.IndexByte(text, '#')
+	if at < 0 {
+		return ""
+	}
+	return strings.TrimSpace(text[:at])
+}
+
+func namesAFamily(bike string) bool {
+	switch bike {
+	case model.BikeStreetGlide, model.BikeRoadGlide, model.BikeElectraGlide, model.BikeUltra:
+		return true
+	}
+	return false
+}
+
+func detectBike(text string) (string, string) {
 	t := Fold(text)
 	compact := compactor.Replace(t)
 
