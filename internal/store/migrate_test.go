@@ -178,6 +178,37 @@ func TestOpenAnchorsAlreadyNotifiedRowsAtTheirCurrentPrice(t *testing.T) {
 	}
 }
 
+func TestOpenLeavesNoColumnBehindWhenItsSeedFails(t *testing.T) {
+	path := openLegacy(t)
+
+	original := addedColumns
+	t.Cleanup(func() { addedColumns = original })
+
+	bogus := original[len(original)-1]
+	bogus.column = "seed_fails"
+	bogus.ddl = "ALTER TABLE listings ADD COLUMN seed_fails INTEGER"
+	bogus.seed = "UPDATE listings SET seed_fails = there_is_no_such_column"
+	addedColumns = append(original[:len(original):len(original)], bogus)
+
+	if _, err := Open(path); err == nil {
+		t.Fatal("Open must fail when the seed of a new column is invalid")
+	}
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatalf("reopening the database: %v", err)
+	}
+	defer db.Close()
+
+	present, err := hasColumn(db, "listings", bogus.column)
+	if err != nil {
+		t.Fatalf("hasColumn: %v", err)
+	}
+	if present {
+		t.Error("the column survived a failed seed, so the next Open will never seed it")
+	}
+}
+
 func TestOpenDoesNotReanchorAPendingDropOnASecondRun(t *testing.T) {
 	path := openLegacy(t)
 

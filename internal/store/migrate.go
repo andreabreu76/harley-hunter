@@ -5,12 +5,14 @@ import (
 	"fmt"
 )
 
-var addedColumns = []struct {
+type columnMigration struct {
 	table  string
 	column string
 	ddl    string
 	seed   string
-}{
+}
+
+var addedColumns = []columnMigration{
 	{table: "listings", column: "phone", ddl: "ALTER TABLE listings ADD COLUMN phone TEXT"},
 	{table: "listings", column: "published_at", ddl: "ALTER TABLE listings ADD COLUMN published_at TIMESTAMP"},
 	{
@@ -30,15 +32,30 @@ func addMissingColumns(db *sql.DB) error {
 		if present {
 			continue
 		}
-		if _, err := db.Exec(c.ddl); err != nil {
-			return fmt.Errorf("adding column %s.%s: %w", c.table, c.column, err)
+		if err := addColumn(db, c); err != nil {
+			return err
 		}
-		if c.seed == "" {
-			continue
-		}
-		if _, err := db.Exec(c.seed); err != nil {
+	}
+	return nil
+}
+
+func addColumn(db *sql.DB, c columnMigration) error {
+	tx, err := db.Begin()
+	if err != nil {
+		return fmt.Errorf("starting migration of %s.%s: %w", c.table, c.column, err)
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.Exec(c.ddl); err != nil {
+		return fmt.Errorf("adding column %s.%s: %w", c.table, c.column, err)
+	}
+	if c.seed != "" {
+		if _, err := tx.Exec(c.seed); err != nil {
 			return fmt.Errorf("seeding column %s.%s: %w", c.table, c.column, err)
 		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("committing migration of %s.%s: %w", c.table, c.column, err)
 	}
 	return nil
 }
