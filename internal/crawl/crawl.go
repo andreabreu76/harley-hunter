@@ -184,7 +184,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, d
 		if dedupable {
 			adsFromSource := recordSighting(sightings, key, row.Source)
 			if adsFromSource <= alerts[key] {
-				if err := s.MarkNotified(row.ID); err != nil {
+				if err := s.MarkNotified(row.ID, row.PriceCents); err != nil {
 					return sent, err
 				}
 				continue
@@ -196,7 +196,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, d
 		if err := n.Send(ctx, notify.Alert{Message: notify.FormatAlert(row), URL: row.URL}); err != nil {
 			return sent, fmt.Errorf("sending alert for listing %d: %w", row.ID, err)
 		}
-		if err := s.MarkNotified(row.ID); err != nil {
+		if err := s.MarkNotified(row.ID, row.PriceCents); err != nil {
 			return sent, err
 		}
 		if dedupable {

@@ -515,7 +515,7 @@ func TestRequeueSilencedTwinsFreesTheYoungerOfTwoOnOneSource(t *testing.T) {
 		t.Fatalf("Upsert: %v", err)
 	}
 	for _, id := range []int64{older.ID, younger.ID} {
-		if err := s.MarkNotified(id); err != nil {
+		if err := s.MarkNotified(id, nil); err != nil {
 			t.Fatalf("MarkNotified: %v", err)
 		}
 	}
@@ -555,7 +555,7 @@ func TestRequeueSilencedTwinsLeavesACrossPostAlone(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Upsert: %v", err)
 		}
-		if err := s.MarkNotified(res.ID); err != nil {
+		if err := s.MarkNotified(res.ID, nil); err != nil {
 			t.Fatalf("MarkNotified: %v", err)
 		}
 	}

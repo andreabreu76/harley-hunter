@@ -175,8 +175,17 @@ func (s *Store) PendingNotifications(limit int) ([]Row, error) {
 	return collectRows(rows)
 }
 
-func (s *Store) MarkNotified(id int64) error {
-	if _, err := s.db.Exec("UPDATE listings SET notified = 1 WHERE id = ?", id); err != nil {
+func (s *Store) MarkNotified(id int64, priceCents *int64) error {
+	_, err := s.db.Exec(
+		`UPDATE listings SET notified = 1,
+             notified_price_cents = CASE
+                 WHEN ? IS NULL THEN notified_price_cents
+                 WHEN notified_price_cents IS NULL THEN ?
+                 WHEN ? < notified_price_cents THEN ?
+                 ELSE notified_price_cents END
+         WHERE id = ?`,
+		priceCents, priceCents, priceCents, priceCents, id)
+	if err != nil {
 		return fmt.Errorf("marking listing as notified: %w", err)
 	}
 	return nil

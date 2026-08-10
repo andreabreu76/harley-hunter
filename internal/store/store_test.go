@@ -123,7 +123,7 @@ func TestPendingNotificationsOnlyReturnsUnnotifiedMatches(t *testing.T) {
 		t.Fatalf("expected only the match row, got %d rows", len(pending))
 	}
 
-	if err := s.MarkNotified(res.ID); err != nil {
+	if err := s.MarkNotified(res.ID, nil); err != nil {
 		t.Fatalf("MarkNotified: %v", err)
 	}
 	pending, err = s.PendingNotifications(10)
@@ -350,4 +350,52 @@ func TestUpsertLeavesThePublishedDateNilWhenNoSourceEverSentOne(t *testing.T) {
 	if row.PublishedAt != nil {
 		t.Fatalf("PublishedAt = %s, want nil", row.PublishedAt)
 	}
+}
+
+func TestMarkNotifiedAnchorsAtTheLowestPriceAnnounced(t *testing.T) {
+	s := openTemp(t)
+
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	anchor := func(cents int64) *int64 { return &cents }
+
+	if err := s.MarkNotified(res.ID, anchor(7200000)); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
+		t.Fatalf("anchor = %v, want 7200000", got)
+	}
+
+	if err := s.MarkNotified(res.ID, anchor(7500000)); err != nil {
+		t.Fatalf("MarkNotified on a higher price: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
+		t.Errorf("anchor = %v, want it to stay at 7200000: a price rise is not news", got)
+	}
+
+	if err := s.MarkNotified(res.ID, anchor(6800000)); err != nil {
+		t.Fatalf("MarkNotified on a lower price: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 6800000 {
+		t.Errorf("anchor = %v, want 6800000: a drop moves the anchor down", got)
+	}
+
+	if err := s.MarkNotified(res.ID, nil); err != nil {
+		t.Fatalf("MarkNotified without a price: %v", err)
+	}
+	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 6800000 {
+		t.Errorf("anchor = %v, want 6800000 kept: a priceless round must not erase it", got)
+	}
+}
+
+func notifiedPriceOf(t *testing.T, s *Store, id int64) *int64 {
+	t.Helper()
+	row, _, err := s.GetRow(id)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	return row.NotifiedPriceCents
 }
