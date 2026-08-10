@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/config"
@@ -13,6 +14,7 @@ import (
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/notify"
 	"github.com/andreabreu76/harley-hunter/internal/source"
+	"github.com/andreabreu76/harley-hunter/internal/source/meta"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 	"github.com/andreabreu76/harley-hunter/internal/web"
 )
@@ -87,25 +89,43 @@ func sendAlerts(cfg config.Config, db *store.Store, drops []crawl.PriceDrop) {
 	fmt.Printf("alerts shown: %d\n", shown)
 }
 
+var httpOnlySources = map[string]bool{model.SourceMobiauto: true}
+
 func buildSources(cfg config.Config) ([]crawl.Source, error) {
 	browser := source.NewBrowserFetcher(cfg.DevtoolsURL)
 	direct := source.NewHTTPFetcher()
 	sources := make([]crawl.Source, 0, len(cfg.Sources))
 	for _, name := range cfg.Sources {
+		fetcher := source.PageFetcher(browser)
+		if httpOnlySources[name] {
+			fetcher = direct
+		}
 		switch name {
 		case model.SourceOLX:
-			sources = append(sources, source.NewOLX(browser, cfg.SourceURLs[name]))
+			sources = append(sources, source.NewOLX(fetcher, cfg.SourceURLs[name]))
 		case model.SourceMercadoLivre:
-			sources = append(sources, source.NewMercadoLivre(browser, cfg.SourceURLs[name]))
+			sources = append(sources, source.NewMercadoLivre(fetcher, cfg.SourceURLs[name]))
 		case model.SourceWebmotors:
-			sources = append(sources, source.NewWebmotors(browser, cfg.SourceURLs[name]))
+			sources = append(sources, source.NewWebmotors(fetcher, cfg.SourceURLs[name]))
 		case model.SourceMobiauto:
-			sources = append(sources, source.NewMobiauto(direct, cfg.SourceURLs[name]))
+			sources = append(sources, source.NewMobiauto(fetcher, cfg.SourceURLs[name]))
+		case model.SourceInstagram:
+			sources = append(sources, meta.NewInstagram(fetcher, cfg.SourceURLs[name]))
 		default:
 			return nil, fmt.Errorf("unknown source in config: %s", name)
 		}
 	}
 	return sources, nil
+}
+
+func browserSources(names []string) []string {
+	through := make([]string, 0, len(names))
+	for _, name := range names {
+		if !httpOnlySources[name] {
+			through = append(through, name)
+		}
+	}
+	return through
 }
 
 func printReport(cfg config.Config, report crawl.Report, elapsed time.Duration) {
@@ -118,7 +138,10 @@ func printReport(cfg config.Config, report crawl.Report, elapsed time.Duration) 
 	}
 	if report.SharedCause != nil {
 		fmt.Printf("all %d sources failed with the same cause: %v\n", len(report.Results), report.SharedCause)
-		fmt.Printf("olx, mercadolivre and webmotors read their pages through Chrome at %s; check that it is running\n", cfg.DevtoolsURL)
+		if through := browserSources(cfg.Sources); len(through) > 0 {
+			fmt.Printf("%s read their pages through Chrome at %s; check that it is running\n",
+				strings.Join(through, ", "), cfg.DevtoolsURL)
+		}
 	}
 	if report.StoreFailures > 0 {
 		fmt.Printf("storage failures: %d (first: %v)\n", report.StoreFailures, report.StoreErr)

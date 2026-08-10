@@ -12,7 +12,13 @@ import (
 
 type pageParser func(body io.Reader) ([]model.RawListing, error)
 
+type Delay func() time.Duration
+
 func fetchPages(ctx context.Context, fetcher PageFetcher, urls []string, delay time.Duration, parse pageParser) ([]model.RawListing, error) {
+	return FetchPages(ctx, fetcher, urls, func() time.Duration { return delay }, parse)
+}
+
+func FetchPages(ctx context.Context, fetcher PageFetcher, urls []string, delay Delay, parse func(body io.Reader) ([]model.RawListing, error)) ([]model.RawListing, error) {
 	var all []model.RawListing
 	for i, url := range urls {
 		if err := ctx.Err(); err != nil {
@@ -22,7 +28,7 @@ func fetchPages(ctx context.Context, fetcher PageFetcher, urls []string, delay t
 			select {
 			case <-ctx.Done():
 				return all, ctx.Err()
-			case <-time.After(delay):
+			case <-time.After(delay()):
 			}
 		}
 

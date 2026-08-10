@@ -15,6 +15,7 @@ const (
 	SourceMercadoLivre = "mercadolivre"
 	SourceWebmotors    = "webmotors"
 	SourceMobiauto     = "mobiauto"
+	SourceInstagram    = "instagram"
 )
 
 const (

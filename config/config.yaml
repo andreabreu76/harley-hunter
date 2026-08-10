@@ -4,6 +4,7 @@ sources:
   - mercadolivre
   - webmotors
   - mobiauto
+  - instagram
 devtools_url: http://127.0.0.1:9222
 source_urls:
   olx:
@@ -30,12 +31,18 @@ source_urls:
     - https://www.mobiauto.com.br/comprar/motos/pr/harley-davidson/road-glide
     - https://www.mobiauto.com.br/comprar/motos/sp/harley-davidson/road-glide
     - https://www.mobiauto.com.br/comprar/motos/rj/harley-davidson/road-glide
+  instagram:
+    - https://www.instagram.com/explore/tags/streetglide/
+    - https://www.instagram.com/explore/tags/streetglidebrasil/
+    - https://www.instagram.com/explore/tags/roadglide/
+    - https://www.instagram.com/explore/tags/harleyusada/
+    - https://www.instagram.com/explore/tags/harleydavidsonbrasil/
 match:
   years: [2014, 2015]
   maybe_years: [2013, 2016]
   max_price_cents: 7500000
   maybe_max_price_cents: 8500000
 crawl:
-  timeout_seconds: 90
+  timeout_seconds: 240
   max_concurrent: 4
   max_alerts_per_run: 5
