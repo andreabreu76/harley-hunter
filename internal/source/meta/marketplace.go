@@ -81,6 +81,9 @@ func ParseMarketplace(body io.Reader) ([]model.RawListing, error) {
 		}
 		seen[match[1]] = true
 		readable++
+		if isSold(title) {
+			return
+		}
 		if cents, ok := marketplacePriceCents(price); ok && cents < marketplaceMinPriceCents {
 			return
 		}

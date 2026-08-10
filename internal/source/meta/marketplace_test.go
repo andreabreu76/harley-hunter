@@ -290,3 +290,56 @@ func cardHTML(id, price, title, location string) string {
 	return fmt.Sprintf(`<a href="/marketplace/item/%s/?ref=search"><img src="https://cdn/%s.jpg"><span dir="auto">%s</span><span dir="auto">%s</span><span dir="auto">%s</span></a>`,
 		id, id, price, title, location)
 }
+
+func TestParseMarketplaceDropsAListingAlreadyGone(t *testing.T) {
+	for _, title := range []string{
+		"VENDIDO Harley-Davidson Street Glide 2015",
+		"Harley Road Glide 2015 - vendida",
+		"ENTREGUE!! Harley-Davidson Street Glide Special",
+		"harley street glide 2015 entregue",
+	} {
+		if !isSold(title) {
+			t.Errorf("isSold(%q) = false, want true", title)
+		}
+	}
+	for _, title := range []string{
+		"Harley-Davidson Street Glide 2015",
+		"Harley Road Glide entrega para todo o Brasil",
+	} {
+		if isSold(title) {
+			t.Errorf("isSold(%q) = true, want false", title)
+		}
+	}
+}
+
+func TestParseMarketplaceDropsACardTheSellerMarkedGone(t *testing.T) {
+	page := marketplacePage(
+		cardHTML("111", "R$ 72.000", "Harley-Davidson Street Glide 2015", "Curitiba, PR") +
+			cardHTML("222", "R$ 74.000", "VENDIDO Harley-Davidson Street Glide 2015", "Curitiba, PR") +
+			cardHTML("333", "R$ 76.000", "ENTREGUE!! Harley-Davidson Road Glide 2015", "Curitiba, PR"))
+
+	listings, err := ParseMarketplace(strings.NewReader(page))
+	if err != nil {
+		t.Fatalf("ParseMarketplace: %v", err)
+	}
+	if got, want := len(listings), 1; got != want {
+		t.Fatalf("len(listings) = %d, want %d: a sold or delivered card is not on offer", got, want)
+	}
+	if listings[0].ExternalID != "111" {
+		t.Errorf("kept %q, want the one still for sale", listings[0].ExternalID)
+	}
+}
+
+func TestParseMarketplaceAcceptsAPageWhereEverythingSold(t *testing.T) {
+	page := marketplacePage(
+		cardHTML("111", "R$ 72.000", "VENDIDO Harley-Davidson Street Glide", "Curitiba, PR") +
+			cardHTML("222", "R$ 74.000", "Harley Road Glide - entregue", "Curitiba, PR"))
+
+	listings, err := ParseMarketplace(strings.NewReader(page))
+	if err != nil {
+		t.Fatalf("a page of sold cards is readable, not broken: %v", err)
+	}
+	if len(listings) != 0 {
+		t.Fatalf("len(listings) = %d, want 0", len(listings))
+	}
+}

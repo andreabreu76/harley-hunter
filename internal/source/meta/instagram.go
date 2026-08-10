@@ -32,7 +32,7 @@ var (
 	instagramPostPath = regexp.MustCompile(`^/(?:p|reel)/([^/?#]+)`)
 	priceMark         = regexp.MustCompile(`(?i)r\$\s*\d`)
 	saleTerms         = []string{"vendo", "vende-se", "a venda", "disponivel", "aceito troca", "aceito proposta"}
-	soldTerms         = regexp.MustCompile(`\bvendid[oa]s?\b`)
+	soldTerms         = regexp.MustCompile(`\b(vendid[oa]s?|entregues?)\b`)
 )
 
 type Instagram struct {
