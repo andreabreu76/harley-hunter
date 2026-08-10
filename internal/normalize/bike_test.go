@@ -144,3 +144,50 @@ func TestDetectBikeReadsAStyledCaption(t *testing.T) {
 		t.Errorf("DetectBike = %q/%q, want street_glide/special", bike, variant)
 	}
 }
+
+func TestDetectBikeDoesNotReadEspecializadaAsTheSpecialTrim(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+	}{
+		{
+			"instagram caption in styled unicode",
+			"À VENDA!\nStreet Glide 2013, motor TC103 com 57.000km rodados.\n\nR$ 63.000,00.\n\n𝐄𝐬𝐩𝐞𝐜𝐢𝐚𝐥𝐢𝐳𝐚𝐝𝐚 𝐇𝐀𝐑𝐋𝐄𝐘-𝐃𝐀𝐕𝐈𝐃𝐒𝐎𝐍 𝐞𝐦 𝐉𝐨𝐚̃𝐨 𝐏𝐞𝐬𝐬𝐨𝐚.",
+		},
+		{
+			"webmotors dealer blurb",
+			"HARLEY-DAVIDSON STREET GLIDE Em estado de nova, sem detalhes. Revisão recente. Oficina Especializada em Harley Davidson. Troca de óleo, Revisão, Venda e instalação de Peças.",
+		},
+		{
+			"dealer describing itself",
+			"HARLEY-DAVIDSON ROAD GLIDE A SwissMoto é especializada na compra e venda de motos premium.",
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			_, variant := DetectBike(c.in)
+			if variant != model.VariantBase {
+				t.Errorf("variant = %q, want base: a specialised workshop is not the Special trim", variant)
+			}
+		})
+	}
+}
+
+func TestDetectBikeStillReadsTheSpecialTrimAsAWholeWord(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"Street Glide Special 2014", model.VariantSpecial},
+		{"HD STREET GLIDE ESPECIAL 15/15 IMPECAVEL", model.VariantSpecial},
+		{"Harley-Davidson Road-Glide Special 2015", model.VariantSpecial},
+		{"HARLEY-DAVIDSON STREET GLIDE SPECIAL 114", model.VariantSpecial},
+		{"Street Glide special, unico dono", model.VariantSpecial},
+		{"Harley FLHXS 2015", model.VariantSpecial},
+	}
+	for _, c := range cases {
+		if _, variant := DetectBike(c.in); variant != c.want {
+			t.Errorf("DetectBike(%q) variant = %q, want %q", c.in, variant, c.want)
+		}
+	}
+}

@@ -71,10 +71,19 @@ func detectVariant(t, compact, cvoCode, specialCode string) string {
 	if strings.Contains(t, "cvo") || containsCode(compact, cvoCode) {
 		return model.VariantCVO
 	}
-	if containsAny(t, compact, "special", "especial") || containsCode(compact, specialCode) {
+	if containsWord(t, "special", "especial") || containsCode(compact, specialCode) {
 		return model.VariantSpecial
 	}
 	return model.VariantBase
+}
+
+func containsWord(text string, words ...string) bool {
+	for _, w := range words {
+		if wordIndex(text, w) >= 0 {
+			return true
+		}
+	}
+	return false
 }
 
 func containsCode(compact, code string) bool {
