@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/normalize"
@@ -55,6 +56,7 @@ func TestParseOLXSkipsAdvertisingSlots(t *testing.T) {
 func TestParseOLXMapsAdFields(t *testing.T) {
 	listings := parseFixture(t, "testdata/olx-search.html")
 
+	publishedAt := time.Date(2026, 8, 4, 12, 49, 53, 0, time.UTC)
 	want := model.RawListing{
 		Source:       "olx",
 		ExternalID:   "1499153946",
@@ -66,12 +68,17 @@ func TestParseOLXMapsAdFields(t *testing.T) {
 		KmText:       "4780",
 		LocationText: "Curitiba - PR",
 		ImageURL:     "https://img.olx.com.br/images/76/769644421707054.jpg",
+		PublishedAt:  &publishedAt,
 	}
 
 	for _, got := range listings {
 		if got.ExternalID != want.ExternalID {
 			continue
 		}
+		if got.PublishedAt == nil || !got.PublishedAt.Equal(*want.PublishedAt) {
+			t.Fatalf("PublishedAt = %v, want %v", got.PublishedAt, want.PublishedAt)
+		}
+		got.PublishedAt = want.PublishedAt
 		if got != want {
 			t.Fatalf("listing =\n%+v\nwant\n%+v", got, want)
 		}
@@ -310,4 +317,41 @@ func parseFixture(t *testing.T, path string) []model.RawListing {
 		t.Fatalf("ParseOLX: %v", err)
 	}
 	return listings
+}
+
+func TestParseOLXReadsTheDateTheAdWasPublished(t *testing.T) {
+	listings := parseFixture(t, "testdata/olx-search.html")
+
+	want := time.Date(2026, 8, 4, 12, 49, 53, 0, time.UTC)
+	for _, l := range listings {
+		if l.ExternalID != "1499153946" {
+			continue
+		}
+		if l.PublishedAt == nil {
+			t.Fatal("PublishedAt is nil, want the date the flight payload carries")
+		}
+		if !l.PublishedAt.Equal(want) {
+			t.Fatalf("PublishedAt = %s, want %s", l.PublishedAt.Format(time.RFC3339), want.Format(time.RFC3339))
+		}
+		if l.PublishedAt.Location() != time.UTC {
+			t.Errorf("PublishedAt zone = %s, want UTC", l.PublishedAt.Location())
+		}
+		return
+	}
+	t.Fatal("listing 1499153946 not found in the fixture")
+}
+
+func TestParseOLXLeavesThePublishedDateNilWhenTheAdOmitsIt(t *testing.T) {
+	page := olxPage(t, `{"ads":[{"listId":1,"subject":"Street Glide","url":"https://olx.com.br/1"}]}`)
+
+	listings, err := ParseOLX(page)
+	if err != nil {
+		t.Fatalf("ParseOLX: %v", err)
+	}
+	if len(listings) != 1 {
+		t.Fatalf("len(listings) = %d, want 1", len(listings))
+	}
+	if listings[0].PublishedAt != nil {
+		t.Errorf("PublishedAt = %v, want nil for an ad with no date", listings[0].PublishedAt)
+	}
 }

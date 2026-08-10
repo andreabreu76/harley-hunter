@@ -2,6 +2,7 @@ package normalize
 
 import (
 	"testing"
+	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
 )
@@ -220,5 +221,34 @@ func TestNormalizeLeavesThePhoneNilWhenTheAdHasNone(t *testing.T) {
 
 	if l.Phone != nil {
 		t.Errorf("Phone = %q, want nil", *l.Phone)
+	}
+}
+
+func TestNormalizeCarriesThePublishedDateInUTC(t *testing.T) {
+	brt := time.FixedZone("BRT", -3*3600)
+	published := time.Date(2026, 8, 4, 9, 49, 53, 0, brt)
+	raw := model.RawListing{
+		Source:      "olx",
+		ExternalID:  "1499153946",
+		Title:       "Harley Street Glide",
+		PublishedAt: &published,
+	}
+	l := Normalize(raw)
+
+	if l.PublishedAt == nil {
+		t.Fatal("PublishedAt is nil, want the date the source published")
+	}
+	if !l.PublishedAt.Equal(published) {
+		t.Errorf("PublishedAt = %s, want %s", l.PublishedAt, published)
+	}
+	if l.PublishedAt.Location() != time.UTC {
+		t.Errorf("PublishedAt zone = %s, want UTC", l.PublishedAt.Location())
+	}
+}
+
+func TestNormalizeLeavesThePublishedDateNilWhenTheSourceOmitsIt(t *testing.T) {
+	l := Normalize(model.RawListing{Source: "mobiauto", ExternalID: "31389122", Title: "Harley Street Glide"})
+	if l.PublishedAt != nil {
+		t.Errorf("PublishedAt = %v, want nil", l.PublishedAt)
 	}
 }

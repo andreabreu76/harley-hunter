@@ -48,6 +48,7 @@ type olxAd struct {
 		Municipality string `json:"municipality"`
 		UF           string `json:"uf"`
 	} `json:"locationDetails"`
+	Date   int64 `json:"date"`
 	Images []struct {
 		Original string `json:"original"`
 	} `json:"images"`
@@ -89,6 +90,7 @@ func ParseOLX(body io.Reader) ([]model.RawListing, error) {
 			KmText:       olxProperty(ad, "mileage"),
 			LocationText: olxLocation(ad),
 			ImageURL:     olxImage(ad),
+			PublishedAt:  olxPublishedAt(ad),
 		})
 	}
 
@@ -185,6 +187,14 @@ func olxLocation(ad olxAd) string {
 		return city + " - " + uf
 	}
 	return city
+}
+
+func olxPublishedAt(ad olxAd) *time.Time {
+	if ad.Date <= 0 {
+		return nil
+	}
+	at := time.Unix(ad.Date, 0).UTC()
+	return &at
 }
 
 func olxImage(ad olxAd) string {

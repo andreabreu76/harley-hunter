@@ -1,5 +1,7 @@
 package model
 
+import "time"
+
 type Verdict string
 
 const (
@@ -49,6 +51,7 @@ type RawListing struct {
 	KmText       string
 	LocationText string
 	ImageURL     string
+	PublishedAt  *time.Time
 }
 
 type Listing struct {
@@ -66,6 +69,7 @@ type Listing struct {
 	State         string
 	ImageURL      string
 	Phone         *string
+	PublishedAt   *time.Time
 	Verdict       Verdict
 	VerdictReason map[string]Verdict
 	Fingerprint   string

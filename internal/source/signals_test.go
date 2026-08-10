@@ -56,3 +56,29 @@ func TestFixturePhoneCoverageMatchesWhatTheAdsActuallyPublish(t *testing.T) {
 		}
 	}
 }
+
+func TestFixturePublishedDateCoverageMatchesWhatTheSourcesActuallySend(t *testing.T) {
+	cases := []struct {
+		source   string
+		listings []model.RawListing
+		want     int
+	}{
+		{model.SourceOLX, parseFixture(t, "testdata/olx-search.html"), 42},
+		{model.SourceWebmotors, parseWebmotorsFixture(t, "testdata/webmotors-search.html"), 0},
+		{model.SourceMercadoLivre, parseMercadoLivreFixture(t, "testdata/mercadolivre-search.html"), 0},
+		{model.SourceMobiauto, parseMobiautoFixture(t, "testdata/mobiauto-search.html"), 0},
+	}
+
+	for _, c := range cases {
+		dated := 0
+		for _, raw := range c.listings {
+			if normalize.Normalize(raw).PublishedAt != nil {
+				dated++
+			}
+		}
+		if dated != c.want {
+			t.Errorf("%s: %d of %d listings carry a published date, want %d",
+				c.source, dated, len(c.listings), c.want)
+		}
+	}
+}

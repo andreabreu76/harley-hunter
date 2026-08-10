@@ -55,6 +55,11 @@ func Normalize(raw model.RawListing) model.Listing {
 		l.Phone = &phone
 	}
 
+	if raw.PublishedAt != nil {
+		at := raw.PublishedAt.UTC()
+		l.PublishedAt = &at
+	}
+
 	l.Fingerprint = Fingerprint(l)
 	return l
 }
