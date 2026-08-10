@@ -447,7 +447,11 @@ func priceDrop(r store.Row) string {
 }
 
 func phoneLink(digits *string) template.URL {
-	return template.URL("tel:" + format.PhoneLink(*digits))
+	dialable := format.PhoneLink(*digits)
+	if dialable == "" {
+		return ""
+	}
+	return template.URL("tel:" + dialable)
 }
 
 func location(r store.Row) string {

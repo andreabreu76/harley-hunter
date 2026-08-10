@@ -1,6 +1,7 @@
 package format
 
 import (
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -15,8 +16,10 @@ func Phone(digits string) string {
 	return digits
 }
 
+var dialableDigits = regexp.MustCompile(`^[0-9]{10,11}$`)
+
 func PhoneLink(digits string) string {
-	if digits == "" {
+	if !dialableDigits.MatchString(digits) {
 		return ""
 	}
 	return countryCode + digits

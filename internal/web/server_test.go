@@ -965,3 +965,16 @@ func TestFipeReferenceNeverMovesTheVerdict(t *testing.T) {
 		t.Errorf("rows = %v, want the verdict untouched by the reference", rows)
 	}
 }
+
+func TestPhoneLinkHelperRefusesAnythingButADialableNumber(t *testing.T) {
+	good := "11982413574"
+	if got, want := string(phoneLink(&good)), "tel:+5511982413574"; got != want {
+		t.Errorf("phoneLink = %q, want %q", got, want)
+	}
+	for _, bogus := range []string{"", "123", "javascript:alert(1)", "11982413574\" onclick=\"x"} {
+		digits := bogus
+		if got := phoneLink(&digits); got != "" {
+			t.Errorf("phoneLink(%q) = %q, want empty: only a real number reaches the tel: sink", bogus, got)
+		}
+	}
+}

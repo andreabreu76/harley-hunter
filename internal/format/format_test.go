@@ -49,3 +49,25 @@ func TestPhoneLink(t *testing.T) {
 		t.Errorf("PhoneLink(%q) = %q, want empty", "", got)
 	}
 }
+
+func TestPhoneLinkOnlyBuildsATelTargetFromRealDigits(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"11982413574", "+5511982413574"},
+		{"4133334444", "+554133334444"},
+		{"", ""},
+		{"123", ""},
+		{"119824135741234", ""},
+		{"(11) 98241-3574", ""},
+		{"11982413574 ", ""},
+		{"1198241357a", ""},
+		{"+5511982413574", ""},
+	}
+	for _, c := range cases {
+		if got := PhoneLink(c.in); got != c.want {
+			t.Errorf("PhoneLink(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
