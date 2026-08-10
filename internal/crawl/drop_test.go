@@ -2,6 +2,7 @@ package crawl
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -251,6 +252,44 @@ func TestNotifyAlertsACrossPostDropOnlyOnce(t *testing.T) {
 	}
 	if sent != 1 {
 		t.Errorf("sent = %d, want 1: both sides of a cross-post dropping is one piece of news", sent)
+	}
+}
+
+func TestNotifyReachesADropOnANewerListingBehindAQueueOfOlderMatches(t *testing.T) {
+	s := openStore(t)
+
+	old := time.Now().Add(-24 * time.Hour)
+	for i := 0; i < 20; i++ {
+		older := withPrice(matchListing(fmt.Sprintf("old-%d", i)), 7500000)
+		if _, err := s.Upsert(older, old.Add(time.Duration(i)*time.Minute)); err != nil {
+			t.Fatalf("Upsert of the older match: %v", err)
+		}
+	}
+
+	newer := withPrice(matchListing("newer"), 7200000)
+	res, err := s.Upsert(newer, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert of the newer match: %v", err)
+	}
+	anchored := int64(7200000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+	if _, err := s.Upsert(withPrice(newer, 6000000), time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 1, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if sent != 1 {
+		t.Fatalf("sent = %d, want 1: the cap allows one", sent)
+	}
+	if !strings.HasPrefix(n.messages[0], "▼") {
+		t.Errorf("alert = %q, want the drop: no number of older matches may hide it from the ordering",
+			n.messages[0])
 	}
 }
 

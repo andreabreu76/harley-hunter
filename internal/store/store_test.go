@@ -430,7 +430,7 @@ func TestPendingAlertsCarriesNewMatchesAndPriceDrops(t *testing.T) {
 		t.Fatalf("MarkNotified: %v", err)
 	}
 
-	pending, err := s.PendingAlerts(10)
+	pending, err := s.PendingAlerts()
 	if err != nil {
 		t.Fatalf("PendingAlerts: %v", err)
 	}
@@ -445,7 +445,7 @@ func TestPendingAlertsCarriesNewMatchesAndPriceDrops(t *testing.T) {
 		t.Fatalf("Upsert after the drop: %v", err)
 	}
 
-	pending, err = s.PendingAlerts(10)
+	pending, err = s.PendingAlerts()
 	if err != nil {
 		t.Fatalf("PendingAlerts: %v", err)
 	}
@@ -488,7 +488,7 @@ func TestPendingAlertsIgnoresADropOnAListingAlreadyGone(t *testing.T) {
 		t.Fatalf("closing the listing: %v", err)
 	}
 
-	pending, err := s.PendingAlerts(10)
+	pending, err := s.PendingAlerts()
 	if err != nil {
 		t.Fatalf("PendingAlerts: %v", err)
 	}
@@ -507,7 +507,7 @@ func TestPendingAlertsKeepsAMaybeOutOfTheQueueWhenItsPriceDrops(t *testing.T) {
 		t.Fatalf("Upsert: %v", err)
 	}
 
-	pending, err := s.PendingAlerts(10)
+	pending, err := s.PendingAlerts()
 	if err != nil {
 		t.Fatalf("PendingAlerts: %v", err)
 	}
@@ -526,7 +526,7 @@ func TestPendingAlertsKeepsAMaybeOutOfTheQueueWhenItsPriceDrops(t *testing.T) {
 		t.Fatalf("Upsert after the drop: %v", err)
 	}
 
-	pending, err = s.PendingAlerts(10)
+	pending, err = s.PendingAlerts()
 	if err != nil {
 		t.Fatalf("PendingAlerts: %v", err)
 	}

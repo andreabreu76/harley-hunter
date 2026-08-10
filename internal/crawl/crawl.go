@@ -38,8 +38,6 @@ const (
 
 const DefaultAlertsPerRun = 5
 
-const pendingOversample = 3
-
 type Source interface {
 	Name() string
 	Fetch(ctx context.Context) ([]model.RawListing, error)
@@ -162,7 +160,7 @@ func Notify(ctx context.Context, s *store.Store, n notify.Notifier, limit int, r
 	if limit <= 0 {
 		limit = DefaultAlertsPerRun
 	}
-	pending, err := s.PendingAlerts(limit * pendingOversample)
+	pending, err := s.PendingAlerts()
 	if err != nil {
 		return 0, err
 	}
