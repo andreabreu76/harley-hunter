@@ -37,6 +37,11 @@ const (
 	crossPostLabel = "anunciada também em "
 )
 
+const (
+	publishedLabel = "anúncio de "
+	radarLabel     = "no radar "
+)
+
 type server struct {
 	store      *store.Store
 	sources    []string
@@ -95,6 +100,8 @@ func NewServer(s *store.Store, sources []string) http.Handler {
 		"stateLabel": stateLabel,
 		"scanned":    scannedLabel,
 		"datetime":   datetime,
+		"datetimeOf": func(at *time.Time) string { return datetime(*at) },
+		"age":        age,
 	}
 
 	parse := func(page string) *template.Template {
@@ -420,14 +427,28 @@ func datetime(t time.Time) string {
 	return t.In(time.Local).Format("02/01/2006 15:04")
 }
 
+func age(r store.Row) string {
+	if r.PublishedAt != nil {
+		return publishedLabel + elapsedLabel(time.Since(*r.PublishedAt))
+	}
+	return radarLabel + humanSince(time.Since(r.FirstSeenAt))
+}
+
 func humanSince(elapsed time.Duration) string {
+	if elapsed < time.Minute {
+		return "agora"
+	}
+	return "há " + elapsedLabel(elapsed)
+}
+
+func elapsedLabel(elapsed time.Duration) string {
 	switch {
 	case elapsed < time.Minute:
 		return "agora"
 	case elapsed < time.Hour:
-		return fmt.Sprintf("há %dmin", int(elapsed.Minutes()))
+		return fmt.Sprintf("%dmin", int(elapsed.Minutes()))
 	case elapsed < 48*time.Hour:
-		return fmt.Sprintf("há %dh", int(elapsed.Hours()))
+		return fmt.Sprintf("%dh", int(elapsed.Hours()))
 	}
-	return fmt.Sprintf("há %dd", int(elapsed.Hours())/24)
+	return fmt.Sprintf("%dd", int(elapsed.Hours())/24)
 }

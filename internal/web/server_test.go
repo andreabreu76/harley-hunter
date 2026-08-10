@@ -93,6 +93,8 @@ var (
 	healthRowPattern = regexp.MustCompile(`(?s)<td>(\w+)</td>\s*<td[^>]*>(\w+)</td>\s*<td[^>]*>(.*?)</td>\s*<td[^>]*>(.*?)</td>`)
 	stripPattern     = regexp.MustCompile(`(?s)<span class="luz luz-(\w+)"[^>]*></span>\s*<span class="luz-fonte">(.*?)</span>\s*<span class="luz-quando">(.*?)</span>`)
 	imgPattern       = regexp.MustCompile(`<img[^>]*>`)
+	agePattern       = regexp.MustCompile(`(?s)<div class="idade">(.*?)</div>`)
+	datesPattern     = regexp.MustCompile(`(?s)<div class="datas">(.*?)</div>`)
 )
 
 func flatten(s string) string {
@@ -719,4 +721,95 @@ func TestCardWithoutAPhoneShowsNoContactLink(t *testing.T) {
 	if strings.Contains(body, "tel:") {
 		t.Errorf("listing without a phone still rendered a tel link, body:\n%s", body)
 	}
+}
+
+func agedListing(id string, published *time.Time) model.Listing {
+	year := 2015
+	cents := int64(7200000)
+	return model.Listing{
+		Source: "olx", ExternalID: id, URL: "https://example.com/" + id,
+		Title: "Harley Street Glide", Bike: model.BikeStreetGlide, Year: &year,
+		PriceCents: &cents, City: "curitiba", State: "PR", PublishedAt: published,
+		Verdict: model.VerdictMatch,
+	}
+}
+
+func ageLines(body string) []string {
+	var lines []string
+	for _, m := range agePattern.FindAllStringSubmatch(body, -1) {
+		lines = append(lines, flatten(m[1]))
+	}
+	return lines
+}
+
+func TestCardShowsHowOldTheAdIsWhenTheSourcePublishedADate(t *testing.T) {
+	s := emptyStore(t)
+	published := time.Now().Add(-12 * 24 * time.Hour)
+	upsert(t, s, agedListing("a1", &published), time.Now().Add(-3*24*time.Hour))
+
+	code, body := get(t, NewServer(s, nil), "/")
+	if code != http.StatusOK {
+		t.Fatalf("GET / = %d", code)
+	}
+	if got := ageLines(body); len(got) != 1 || got[0] != "anúncio de 12d" {
+		t.Errorf("age line = %v, want [anúncio de 12d]", got)
+	}
+}
+
+func TestCardSaysWhenItOnlyKnowsTheDayItFoundTheAd(t *testing.T) {
+	s := emptyStore(t)
+	upsert(t, s, agedListing("a2", nil), time.Now().Add(-3*24*time.Hour))
+
+	code, body := get(t, NewServer(s, nil), "/")
+	if code != http.StatusOK {
+		t.Fatalf("GET / = %d", code)
+	}
+	if got := ageLines(body); len(got) != 1 || got[0] != "no radar há 3d" {
+		t.Errorf("age line = %v, want [no radar há 3d]", got)
+	}
+}
+
+func TestDetailShowsBothDatesWhenTheSourcePublishedOne(t *testing.T) {
+	useSaoPauloZone(t)
+	s := emptyStore(t)
+	published := time.Date(2026, 8, 4, 12, 49, 53, 0, time.UTC)
+	id := upsert(t, s, agedListing("a3", &published), time.Date(2026, 8, 9, 22, 5, 0, 0, time.UTC))
+
+	code, body := get(t, NewServer(s, nil), "/listing/"+strconv.FormatInt(id, 10))
+	if code != http.StatusOK {
+		t.Fatalf("GET detail = %d", code)
+	}
+	dates := datesLine(body)
+	if !strings.Contains(dates, "publicado em 04/08/2026 09:49") {
+		t.Errorf("detail dates = %q, want the published date in local time", dates)
+	}
+	if !strings.Contains(dates, "no radar desde 09/08/2026 19:05") {
+		t.Errorf("detail dates = %q, want the date the bot first saw it", dates)
+	}
+}
+
+func TestDetailShowsOnlyTheRadarDateWhenTheSourcePublishedNone(t *testing.T) {
+	useSaoPauloZone(t)
+	s := emptyStore(t)
+	id := upsert(t, s, agedListing("a4", nil), time.Date(2026, 8, 9, 22, 5, 0, 0, time.UTC))
+
+	code, body := get(t, NewServer(s, nil), "/listing/"+strconv.FormatInt(id, 10))
+	if code != http.StatusOK {
+		t.Fatalf("GET detail = %d", code)
+	}
+	dates := datesLine(body)
+	if strings.Contains(dates, "publicado em") {
+		t.Errorf("detail dates = %q, want no publication claim the source never made", dates)
+	}
+	if !strings.Contains(dates, "no radar desde 09/08/2026 19:05") {
+		t.Errorf("detail dates = %q, want the date the bot first saw it", dates)
+	}
+}
+
+func datesLine(body string) string {
+	m := datesPattern.FindStringSubmatch(body)
+	if m == nil {
+		return ""
+	}
+	return flatten(m[1])
 }

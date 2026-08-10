@@ -14,6 +14,10 @@
       <span class="tag">{{$card.Row.Source}}</span>
       {{with stateLabel $card.Row.UserState}} · {{.}}{{end}}
     </div>
+    <div class="idade">{{age $card.Row}}</div>
+    <div class="datas">
+      {{if $card.Row.PublishedAt}}publicado em {{datetimeOf $card.Row.PublishedAt}} · {{end}}no radar desde {{datetime $card.Row.FirstSeenAt}}
+    </div>
     <div class="links">
       <a href="{{$card.Row.URL}}" target="_blank" rel="noreferrer">abrir anúncio original</a>
       {{if $card.Row.Phone}} · <a class="fone" href="{{phoneLink $card.Row.Phone}}">{{phone $card.Row.Phone}}</a>{{end}}
