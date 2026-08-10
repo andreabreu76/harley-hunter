@@ -97,3 +97,23 @@ func TestCombinarStillVetoesAThousandsFigure(t *testing.T) {
 		t.Errorf("ParsePrice = %d, true, want absent: without an explicit R$ the ad is still asking to talk", cents)
 	}
 }
+
+func TestFullwidthPriceParsesOnceItIsFolded(t *testing.T) {
+	cases := []struct {
+		in   string
+		want int64
+	}{
+		{"Ｒ＄ ８６.７００,００", 8670000},
+		{"Ｒ＄ ８６.７００", 8670000},
+		{"𝟖𝟔.𝟕𝟎𝟎", 8670000},
+	}
+	for _, c := range cases {
+		if cents, ok := ParsePrice(c.in); ok {
+			t.Errorf("ParsePrice(%q) = %d without folding: the pipeline hands ParsePrice raw text", c.in, cents)
+		}
+		cents, ok := ParsePrice(Fold(c.in))
+		if !ok || cents != c.want {
+			t.Errorf("ParsePrice(Fold(%q)) = %d, %v, want %d, true", c.in, cents, ok, c.want)
+		}
+	}
+}

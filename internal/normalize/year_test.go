@@ -31,3 +31,9 @@ func TestParseYear(t *testing.T) {
 		})
 	}
 }
+
+func TestParseYearReadsStyledDigits(t *testing.T) {
+	if year, ok := ParseYear(Fold("𝟐𝟎𝟏𝟒")); !ok || year != 2014 {
+		t.Errorf("ParseYear(Fold(styled 2014)) = %d, %v, want 2014, true", year, ok)
+	}
+}

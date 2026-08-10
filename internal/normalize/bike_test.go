@@ -120,3 +120,27 @@ func TestDetectBikeKeepsTheBodyWhenItNamesTheFamily(t *testing.T) {
 		t.Errorf("bike = %q, want electra_glide: the body wins over the footer", bike)
 	}
 }
+
+func TestFoldFlattensStyledUnicodeToPlainLetters(t *testing.T) {
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{"✅ 𝐕𝐄𝐍𝐃𝐈𝐃𝐎", "✅ vendido"},
+		{"𝗕𝗜𝗚 𝗧𝗪𝗜𝗡", "big twin"},
+		{"𝐄𝐬𝐩𝐞𝐜𝐢𝐚𝐥𝐢𝐳𝐚𝐝𝐚 𝐇𝐀𝐑𝐋𝐄𝐘-𝐃𝐀𝐕𝐈𝐃𝐒𝐎𝐍 𝐞𝐦 𝐉𝐨𝐚̃𝐨 𝐏𝐞𝐬𝐬𝐨𝐚.", "especializada harley-davidson em joao pessoa."},
+		{"São Paulo", "sao paulo"},
+		{"HARLEY-DAVIDSON", "harley-davidson"},
+	}
+	for _, c := range cases {
+		if got := Fold(c.in); got != c.want {
+			t.Errorf("Fold(%q) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDetectBikeReadsAStyledCaption(t *testing.T) {
+	if bike, variant := DetectBike("𝐒𝐭𝐫𝐞𝐞𝐭 𝐆𝐥𝐢𝐝𝐞 𝐒𝐩𝐞𝐜𝐢𝐚𝐥 2015"); bike != model.BikeStreetGlide || variant != model.VariantSpecial {
+		t.Errorf("DetectBike = %q/%q, want street_glide/special", bike, variant)
+	}
+}

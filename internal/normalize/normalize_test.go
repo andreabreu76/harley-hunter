@@ -252,3 +252,21 @@ func TestNormalizeLeavesThePublishedDateNilWhenTheSourceOmitsIt(t *testing.T) {
 		t.Errorf("PublishedAt = %v, want nil", l.PublishedAt)
 	}
 }
+
+func TestNormalizeReadsAStyledUnicodeCaption(t *testing.T) {
+	l := Normalize(model.RawListing{
+		Source:     "instagram",
+		ExternalID: "styled",
+		RawText:    "𝐒𝐭𝐫𝐞𝐞𝐭 𝐆𝐥𝐢𝐝𝐞 𝐒𝐩𝐞𝐜𝐢𝐚𝐥 𝟐𝟎𝟏𝟒 em 𝐂𝐮𝐫𝐢𝐭𝐢𝐛𝐚",
+	})
+
+	if l.Bike != model.BikeStreetGlide || l.Variant != model.VariantSpecial {
+		t.Errorf("bike/variant = %q/%q, want street_glide/special", l.Bike, l.Variant)
+	}
+	if l.Year == nil || *l.Year != 2014 {
+		t.Errorf("Year = %v, want 2014 read through the folded text", l.Year)
+	}
+	if l.City != "curitiba" {
+		t.Errorf("City = %q, want curitiba", l.City)
+	}
+}

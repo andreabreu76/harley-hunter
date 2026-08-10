@@ -11,7 +11,7 @@ import (
 var compactor = strings.NewReplacer(" ", "", "-", "", ".", "", "/", "")
 
 func Fold(s string) string {
-	decomposed := norm.NFD.String(strings.ToLower(s))
+	decomposed := norm.NFKD.String(s)
 	var b strings.Builder
 	for _, r := range decomposed {
 		if unicode.Is(unicode.Mn, r) {
@@ -19,7 +19,7 @@ func Fold(s string) string {
 		}
 		b.WriteRune(r)
 	}
-	return strings.Join(strings.Fields(b.String()), " ")
+	return strings.Join(strings.Fields(strings.ToLower(b.String())), " ")
 }
 
 func DetectBike(text string) (string, string) {
