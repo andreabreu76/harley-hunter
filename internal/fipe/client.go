@@ -18,6 +18,8 @@ func NewHTTPFetcher() PageFetcher {
 	return &httpFetcher{client: &http.Client{Timeout: fetchTimeout}}
 }
 
+var maxQuoteBytes int64 = 2 << 20
+
 func (h *httpFetcher) FetchPage(ctx context.Context, url string) (string, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
@@ -31,7 +33,7 @@ func (h *httpFetcher) FetchPage(ctx context.Context, url string) (string, error)
 	}
 	defer response.Body.Close()
 
-	body, err := io.ReadAll(response.Body)
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxQuoteBytes))
 	if err != nil {
 		return "", fmt.Errorf("reading the fipe quote: %w", err)
 	}

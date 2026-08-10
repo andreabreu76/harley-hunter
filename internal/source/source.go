@@ -34,6 +34,8 @@ type PageFetcher interface {
 	FetchPage(ctx context.Context, url string) (string, error)
 }
 
+var maxPageBytes int64 = 16 << 20
+
 type HTTPFetcher struct {
 	client *http.Client
 }
@@ -60,7 +62,7 @@ func (h *HTTPFetcher) FetchPage(ctx context.Context, url string) (string, error)
 		return "", fmt.Errorf("fetching %s: the server answered %d %s", url, response.StatusCode, http.StatusText(response.StatusCode))
 	}
 
-	body, err := io.ReadAll(response.Body)
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxPageBytes))
 	if err != nil {
 		return "", fmt.Errorf("reading %s: %w", url, err)
 	}

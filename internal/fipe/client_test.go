@@ -2,6 +2,7 @@ package fipe
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -48,5 +49,24 @@ func TestClientReturnsAHealthyBody(t *testing.T) {
 	q, err := ParseQuote(strings.NewReader(body))
 	if err != nil || q.Code != "810059-4" {
 		t.Errorf("quote = %+v, err = %v", q, err)
+	}
+}
+
+func TestFipeClientStopsReadingAnEndlessBody(t *testing.T) {
+	previous := maxQuoteBytes
+	maxQuoteBytes = 64
+	t.Cleanup(func() { maxQuoteBytes = previous })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, strings.Repeat("x", 5000))
+	}))
+	defer server.Close()
+
+	page, err := (&httpFetcher{client: server.Client()}).FetchPage(context.Background(), server.URL)
+	if err != nil {
+		t.Fatalf("FetchPage: %v", err)
+	}
+	if int64(len(page)) != maxQuoteBytes {
+		t.Errorf("len(page) = %d, want it capped at %d", len(page), maxQuoteBytes)
 	}
 }
