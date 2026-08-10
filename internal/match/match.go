@@ -56,6 +56,9 @@ func evaluatePrice(cents *int64, c config.MatchCriteria) model.Verdict {
 }
 
 func evaluateLocation(city, state string) model.Verdict {
+	if city == "" && state == "" {
+		return model.VerdictMaybe
+	}
 	switch normalize.LocationTier(city, state) {
 	case "metro":
 		return model.VerdictMatch
