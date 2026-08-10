@@ -496,3 +496,41 @@ func TestPendingAlertsIgnoresADropOnAListingAlreadyGone(t *testing.T) {
 		t.Errorf("pending = %d rows, want 0: a closed ad is not an opportunity", len(pending))
 	}
 }
+
+func TestPendingAlertsKeepsAMaybeOutOfTheQueueWhenItsPriceDrops(t *testing.T) {
+	s := openTemp(t)
+
+	l := sample(8000000)
+	l.Verdict = model.VerdictMaybe
+	res, err := s.Upsert(l, time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	pending, err := s.PendingAlerts(10)
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Fatalf("pending = %d rows, want 0: a maybe is not a new match", len(pending))
+	}
+
+	anchored := int64(8000000)
+	if err := s.MarkNotified(res.ID, &anchored); err != nil {
+		t.Fatalf("MarkNotified: %v", err)
+	}
+
+	lower := int64(7600000)
+	l.PriceCents = &lower
+	if _, err := s.Upsert(l, time.Now()); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+
+	pending, err = s.PendingAlerts(10)
+	if err != nil {
+		t.Fatalf("PendingAlerts: %v", err)
+	}
+	if len(pending) != 0 {
+		t.Errorf("pending = %d rows, want 0: only matches ring the phone", len(pending))
+	}
+}

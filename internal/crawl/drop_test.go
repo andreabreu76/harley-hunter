@@ -253,3 +253,46 @@ func TestNotifyAlertsACrossPostDropOnlyOnce(t *testing.T) {
 		t.Errorf("sent = %d, want 1: both sides of a cross-post dropping is one piece of news", sent)
 	}
 }
+
+func TestNotifyKeepsASecondSameSourceAdWhenTheSortHoistsTheCrossPost(t *testing.T) {
+	s := openStore(t)
+
+	shared := func(source, id string, cents int64, km int) model.Listing {
+		l := withPrice(withKm(matchListing(id), km), cents)
+		l.Source = source
+		l.Fingerprint = "aa11bb22cc33dd44"
+		return l
+	}
+
+	newest := time.Now()
+	oldest := newest.Add(-time.Hour)
+
+	if _, err := s.Upsert(shared("olx", "olx-237", 7500000, 53000), newest); err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	drainAlerts(t, s)
+
+	for _, l := range []model.Listing{
+		shared("webmotors", "wm-237", 7200000, 53000),
+		shared("webmotors", "wm-251", 7200000, 53118),
+	} {
+		if _, err := s.Upsert(l, oldest); err != nil {
+			t.Fatalf("Upsert of the webmotors ads: %v", err)
+		}
+	}
+	if _, err := s.Upsert(shared("olx", "olx-237", 6000000, 53000), newest.Add(time.Minute)); err != nil {
+		t.Fatalf("Upsert after the drop: %v", err)
+	}
+
+	n := &recordingNotifier{}
+	sent, err := Notify(context.Background(), s, n, 5, nil)
+	if err != nil {
+		t.Fatalf("Notify: %v", err)
+	}
+	if !strings.HasPrefix(n.messages[0], "▼") {
+		t.Fatalf("first alert = %q, want the drop the urgency sort hoisted ahead of the older ads", n.messages[0])
+	}
+	if sent != 2 {
+		t.Errorf("sent = %d, want 2: hoisting the olx cross-post must not silence both webmotors bikes", sent)
+	}
+}
