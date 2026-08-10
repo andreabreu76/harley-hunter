@@ -44,11 +44,11 @@ func (s *Store) Upsert(l model.Listing, now time.Time) (UpsertResult, error) {
 		res, insertErr := tx.Exec(
 			`INSERT INTO listings
              (source, external_id, url, title, raw_text, bike, variant, year, price_cents,
-              km, city, state, image_url, verdict, verdict_reason, fingerprint,
+              km, city, state, image_url, phone, verdict, verdict_reason, fingerprint,
               first_seen_at, last_seen_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 			l.Source, l.ExternalID, l.URL, l.Title, l.RawText, l.Bike, l.Variant,
-			l.Year, l.PriceCents, l.Km, l.City, l.State, l.ImageURL,
+			l.Year, l.PriceCents, l.Km, l.City, l.State, l.ImageURL, l.Phone,
 			string(l.Verdict), string(reason), l.Fingerprint, now, now)
 		if insertErr != nil {
 			return UpsertResult{}, fmt.Errorf("inserting listing: %w", insertErr)
@@ -65,11 +65,11 @@ func (s *Store) Upsert(l model.Listing, now time.Time) (UpsertResult, error) {
 	default:
 		if _, updateErr := tx.Exec(
 			`UPDATE listings SET url = ?, title = ?, raw_text = ?, bike = ?, variant = ?,
-             year = ?, price_cents = ?, km = ?, city = ?, state = ?, image_url = ?,
+             year = ?, price_cents = ?, km = ?, city = ?, state = ?, image_url = ?, phone = ?,
              verdict = ?, verdict_reason = ?, fingerprint = ?, status = 'active', last_seen_at = ?
              WHERE id = ?`,
 			l.URL, l.Title, l.RawText, l.Bike, l.Variant, l.Year, l.PriceCents, l.Km,
-			l.City, l.State, l.ImageURL, string(l.Verdict), string(reason),
+			l.City, l.State, l.ImageURL, l.Phone, string(l.Verdict), string(reason),
 			l.Fingerprint, now, id); updateErr != nil {
 			return UpsertResult{}, fmt.Errorf("updating listing: %w", updateErr)
 		}

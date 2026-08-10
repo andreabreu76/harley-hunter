@@ -234,3 +234,52 @@ func TestLastRunAtReturnsTheMostRecentFinish(t *testing.T) {
 		t.Errorf("LastRunAt = %s, want %s", at, want)
 	}
 }
+
+func TestUpsertKeepsTheSellerPhone(t *testing.T) {
+	s := openTemp(t)
+	now := time.Now()
+
+	l := sample(7200000)
+	phone := "11982413574"
+	l.Phone = &phone
+	res, err := s.Upsert(l, now)
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+
+	row, _, err := s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.Phone == nil || *row.Phone != phone {
+		t.Fatalf("Phone = %v, want %q", row.Phone, phone)
+	}
+
+	l.Phone = nil
+	if _, err := s.Upsert(l, now.Add(time.Hour)); err != nil {
+		t.Fatalf("Upsert without phone: %v", err)
+	}
+	row, _, err = s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.Phone != nil {
+		t.Fatalf("Phone = %q, want nil once the ad stopped publishing it", *row.Phone)
+	}
+}
+
+func TestUpsertLeavesThePhoneNilWhenTheAdHasNone(t *testing.T) {
+	s := openTemp(t)
+
+	res, err := s.Upsert(sample(7200000), time.Now())
+	if err != nil {
+		t.Fatalf("Upsert: %v", err)
+	}
+	row, _, err := s.GetRow(res.ID)
+	if err != nil {
+		t.Fatalf("GetRow: %v", err)
+	}
+	if row.Phone != nil {
+		t.Fatalf("Phone = %q, want nil", *row.Phone)
+	}
+}
