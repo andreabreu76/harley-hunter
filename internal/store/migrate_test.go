@@ -88,7 +88,7 @@ func TestOpenAddsMissingColumnsToADatabaseFromTheEarlierSchema(t *testing.T) {
 		t.Fatalf("GetRow: %v", err)
 	}
 	if row.Phone == nil || *row.Phone != phone {
-		t.Fatalf("Phone = %v, want %q", row.Phone, phone)
+		t.Fatalf("Phone = %s, want %q", describe(row.Phone), phone)
 	}
 }
 
@@ -174,7 +174,8 @@ func TestOpenAnchorsAlreadyNotifiedRowsAtTheirCurrentPrice(t *testing.T) {
 		t.Fatalf("got %d rows, want the legacy row", len(rows))
 	}
 	if rows[0].NotifiedPriceCents == nil || *rows[0].NotifiedPriceCents != 7200000 {
-		t.Errorf("NotifiedPriceCents = %v, want the price already communicated", rows[0].NotifiedPriceCents)
+		t.Errorf("NotifiedPriceCents = %s, want the price already communicated",
+			describe(rows[0].NotifiedPriceCents))
 	}
 }
 
@@ -247,7 +248,7 @@ func TestOpenDoesNotReanchorAPendingDropOnASecondRun(t *testing.T) {
 		t.Fatalf("ListByVerdict: %v", err)
 	}
 	if rows[0].NotifiedPriceCents == nil || *rows[0].NotifiedPriceCents != 7200000 {
-		t.Errorf("NotifiedPriceCents = %v, want the anchor to survive so the drop stays pending",
-			rows[0].NotifiedPriceCents)
+		t.Errorf("NotifiedPriceCents = %s, want the anchor to survive so the drop stays pending",
+			describe(rows[0].NotifiedPriceCents))
 	}
 }

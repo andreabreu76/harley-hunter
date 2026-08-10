@@ -1,8 +1,8 @@
 package store
 
 import (
+	"fmt"
 	"path/filepath"
-	"strconv"
 	"testing"
 	"time"
 
@@ -89,7 +89,7 @@ func TestUpsertRecordsPriceDrop(t *testing.T) {
 		t.Fatal("price drop should be reported")
 	}
 	if res.PreviousCents == nil || *res.PreviousCents != 7500000 {
-		t.Errorf("PreviousCents = %v, want 7500000", res.PreviousCents)
+		t.Errorf("PreviousCents = %s, want 7500000", describe(res.PreviousCents))
 	}
 
 	_, points, err := s.GetRow(res.ID)
@@ -253,7 +253,7 @@ func TestUpsertKeepsTheSellerPhone(t *testing.T) {
 		t.Fatalf("GetRow: %v", err)
 	}
 	if row.Phone == nil || *row.Phone != phone {
-		t.Fatalf("Phone = %v, want %q", row.Phone, phone)
+		t.Fatalf("Phone = %s, want %q", describe(row.Phone), phone)
 	}
 
 	l.Phone = nil
@@ -367,28 +367,28 @@ func TestMarkNotifiedAnchorsAtTheLowestPriceAnnounced(t *testing.T) {
 		t.Fatalf("MarkNotified: %v", err)
 	}
 	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
-		t.Fatalf("anchor = %v, want 7200000", got)
+		t.Fatalf("anchor = %s, want 7200000", describe(got))
 	}
 
 	if err := s.MarkNotified(res.ID, anchor(7500000)); err != nil {
 		t.Fatalf("MarkNotified on a higher price: %v", err)
 	}
 	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
-		t.Errorf("anchor = %v, want it to stay at 7200000: a price rise is not news", got)
+		t.Errorf("anchor = %s, want it to stay at 7200000: a price rise is not news", describe(got))
 	}
 
 	if err := s.MarkNotified(res.ID, anchor(6800000)); err != nil {
 		t.Fatalf("MarkNotified on a lower price: %v", err)
 	}
 	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 6800000 {
-		t.Errorf("anchor = %v, want 6800000: a drop moves the anchor down", got)
+		t.Errorf("anchor = %s, want 6800000: a drop moves the anchor down", describe(got))
 	}
 
 	if err := s.MarkNotified(res.ID, nil); err != nil {
 		t.Fatalf("MarkNotified without a price: %v", err)
 	}
 	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 6800000 {
-		t.Errorf("anchor = %v, want 6800000 kept: a priceless round must not erase it", got)
+		t.Errorf("anchor = %s, want 6800000 kept: a priceless round must not erase it", describe(got))
 	}
 }
 
@@ -416,7 +416,7 @@ func TestMarkSilencedLeavesAPendingDropStillPending(t *testing.T) {
 	}
 	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
 		t.Fatalf("anchor = %s, want 7200000 kept: silencing must not announce a price for the owner",
-			describeAnchor(got))
+			describe(got))
 	}
 
 	pending, err := s.PendingAlerts()
@@ -441,7 +441,7 @@ func TestMarkSilencedAnchorsAListingThatNeverHadOne(t *testing.T) {
 	}
 	if got := notifiedPriceOf(t, s, res.ID); got == nil || *got != 7200000 {
 		t.Fatalf("anchor = %s, want 7200000: a silenced twin still needs its anchor",
-			describeAnchor(got))
+			describe(got))
 	}
 
 	pending, err := s.PendingAlerts()
@@ -453,11 +453,11 @@ func TestMarkSilencedAnchorsAListingThatNeverHadOne(t *testing.T) {
 	}
 }
 
-func describeAnchor(cents *int64) string {
-	if cents == nil {
+func describe[T any](value *T) string {
+	if value == nil {
 		return "nil"
 	}
-	return strconv.FormatInt(*cents, 10)
+	return fmt.Sprintf("%v", *value)
 }
 
 func notifiedPriceOf(t *testing.T, s *Store, id int64) *int64 {
