@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/andreabreu76/harley-hunter/internal/model"
@@ -299,6 +300,57 @@ func (s *Store) CountByState() (map[string]int, error) {
 		counts[state] = count
 	}
 	return counts, rows.Err()
+}
+
+func (s *Store) CountByVerdict() (map[string]int, error) {
+	rows, err := s.db.Query("SELECT verdict, COUNT(*) FROM listings GROUP BY verdict")
+	if err != nil {
+		return nil, fmt.Errorf("counting listings by verdict: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[string]int)
+	for rows.Next() {
+		var verdict string
+		var count int
+		if err := rows.Scan(&verdict, &count); err != nil {
+			return nil, fmt.Errorf("scanning verdict count: %w", err)
+		}
+		counts[verdict] = count
+	}
+	return counts, rows.Err()
+}
+
+func (s *Store) PriceHistoryFor(ids []int64) (map[int64][]PricePoint, error) {
+	history := make(map[int64][]PricePoint, len(ids))
+	if len(ids) == 0 {
+		return history, nil
+	}
+
+	args := make([]any, 0, len(ids))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(ids)), ",")
+
+	rows, err := s.db.Query(
+		`SELECT listing_id, price_cents, observed_at FROM price_history
+         WHERE listing_id IN (`+placeholders+`)
+         ORDER BY listing_id, observed_at ASC, id ASC`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("querying price history: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int64
+		var p PricePoint
+		if err := rows.Scan(&id, &p.PriceCents, &p.ObservedAt); err != nil {
+			return nil, fmt.Errorf("scanning price point: %w", err)
+		}
+		history[id] = append(history[id], p)
+	}
+	return history, rows.Err()
 }
 
 func (s *Store) LastRunAt(source string) (time.Time, bool, error) {
