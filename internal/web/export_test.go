@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andreabreu76/harley-hunter/internal/crawl"
 	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
@@ -37,7 +38,13 @@ func exportStore(t *testing.T) *store.Store {
 type decodedExport struct {
 	GeneratedAt time.Time      `json:"generated_at"`
 	Counts      map[string]int `json:"counts"`
-	Fipe        []struct {
+	Sources     []struct {
+		Name         string     `json:"name"`
+		Status       string     `json:"status"`
+		LastRunAt    *time.Time `json:"last_run_at"`
+		RecentCounts []int      `json:"recent_counts"`
+	} `json:"sources"`
+	Fipe []struct {
 		Label      string `json:"label"`
 		Year       int    `json:"year"`
 		PriceCents int64  `json:"price_cents"`
@@ -545,5 +552,60 @@ func TestExportGivesAnEmptyRepostListToALoneListing(t *testing.T) {
 	_, body := get(t, srv, "/export.json?verdict=match")
 	if !strings.Contains(body, `"reposts": []`) {
 		t.Errorf("an empty repost list should be an array, got %s", body)
+	}
+}
+
+func sourceIn(t *testing.T, decoded decodedExport, name string) int {
+	t.Helper()
+	for i, s := range decoded.Sources {
+		if s.Name == name {
+			return i
+		}
+	}
+	t.Fatalf("source %s not found in the export", name)
+	return -1
+}
+
+func TestExportReportsTheHealthOfEachSource(t *testing.T) {
+	s := exportStore(t)
+	at := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+	for i, count := range []int{9, 11, 10} {
+		started := at.Add(time.Duration(i) * time.Hour)
+		if err := s.RecordRun(model.SourceOLX, started, started.Add(time.Minute), count, "ok", ""); err != nil {
+			t.Fatalf("RecordRun: %v", err)
+		}
+	}
+	srv := NewServer(s, []string{model.SourceOLX, model.SourceWebmotors})
+
+	decoded := exportOf(t, srv, "/export.json")
+
+	if len(decoded.Sources) != 2 {
+		t.Fatalf("expected both configured sources, got %d", len(decoded.Sources))
+	}
+	olx := decoded.Sources[sourceIn(t, decoded, model.SourceOLX)]
+	if olx.Status != crawl.HealthOK {
+		t.Errorf("a source with productive runs should be ok, got %q", olx.Status)
+	}
+	if len(olx.RecentCounts) != 3 || olx.RecentCounts[0] != 10 {
+		t.Errorf("recent counts should come newest first, got %v", olx.RecentCounts)
+	}
+	if olx.LastRunAt == nil || !olx.LastRunAt.Equal(at.Add(2*time.Hour).Add(time.Minute)) {
+		t.Errorf("unexpected last run %v", olx.LastRunAt)
+	}
+}
+
+func TestExportLeavesASilentSourceWithoutARun(t *testing.T) {
+	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+	olx := decoded.Sources[sourceIn(t, decoded, model.SourceOLX)]
+
+	if olx.LastRunAt != nil {
+		t.Errorf("a source that never ran has no last run, got %v", olx.LastRunAt)
+	}
+
+	_, body := get(t, srv, "/export.json")
+	if !strings.Contains(body, `"recent_counts": []`) {
+		t.Errorf("a source that never ran should carry an empty array, got %s", body)
 	}
 }

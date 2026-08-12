@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/andreabreu76/harley-hunter/internal/crawl"
 	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
@@ -16,8 +17,16 @@ import (
 type exportEnvelope struct {
 	GeneratedAt time.Time       `json:"generated_at"`
 	Counts      map[string]int  `json:"counts"`
+	Sources     []exportSource  `json:"sources"`
 	Fipe        []exportFipeRef `json:"fipe"`
 	Listings    []exportListing `json:"listings"`
+}
+
+type exportSource struct {
+	Name         string     `json:"name"`
+	Status       string     `json:"status"`
+	LastRunAt    *time.Time `json:"last_run_at"`
+	RecentCounts []int      `json:"recent_counts"`
 }
 
 type exportFipeRef struct {
@@ -88,6 +97,7 @@ type exportInput struct {
 	Refs     *fipe.Table
 	FipeRows []fipe.Reference
 	Groups   map[string][]store.Row
+	Sources  []exportSource
 	Counts   map[string]int
 	Now      time.Time
 }
@@ -131,9 +141,35 @@ func buildExport(in exportInput) exportEnvelope {
 	}
 
 	return exportEnvelope{
-		GeneratedAt: in.Now.UTC(), Counts: counts,
+		GeneratedAt: in.Now.UTC(), Counts: counts, Sources: in.Sources,
 		Fipe: references, Listings: listings,
 	}
+}
+
+func (s *server) exportSources() ([]exportSource, error) {
+	sources := make([]exportSource, 0, len(s.sources))
+	for _, name := range s.sources {
+		counts, err := s.store.RecentRunCounts(name, healthHistoryRuns)
+		if err != nil {
+			return nil, err
+		}
+		if counts == nil {
+			counts = []int{}
+		}
+		last, ok, err := s.store.LastRunAt(name)
+		if err != nil {
+			return nil, err
+		}
+		source := exportSource{
+			Name: name, Status: crawl.HealthStatus(counts), RecentCounts: counts,
+		}
+		if ok {
+			utc := last.UTC()
+			source.LastRunAt = &utc
+		}
+		sources = append(sources, source)
+	}
+	return sources, nil
 }
 
 func exportListingFrom(row store.Row, history []store.PricePoint, refs *fipe.Table, siblings []store.Row) exportListing {
@@ -262,9 +298,16 @@ func (s *server) exportJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sources, err := s.exportSources()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	envelope := buildExport(exportInput{
 		Rows: rows, History: history, Refs: fipe.NewTable(references),
-		FipeRows: references, Groups: groups, Counts: counts, Now: time.Now(),
+		FipeRows: references, Groups: groups, Sources: sources,
+		Counts: counts, Now: time.Now(),
 	})
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
