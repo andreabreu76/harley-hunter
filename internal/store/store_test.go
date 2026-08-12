@@ -603,3 +603,116 @@ func TestPendingAlertsKeepsAMaybeOutOfTheQueueWhenItsPriceDrops(t *testing.T) {
 		t.Errorf("pending = %d rows, want 0: only matches ring the phone", len(pending))
 	}
 }
+
+func TestCountByVerdictCountsTheWholeTable(t *testing.T) {
+	s := openTemp(t)
+	now := time.Now()
+
+	for _, spec := range []struct {
+		id      string
+		verdict model.Verdict
+	}{
+		{"c1", model.VerdictMatch},
+		{"c2", model.VerdictMaybe},
+		{"c3", model.VerdictMaybe},
+		{"c4", model.VerdictReject},
+	} {
+		listing := sample(7200000)
+		listing.ExternalID = spec.id
+		listing.Verdict = spec.verdict
+		if _, err := s.Upsert(listing, now); err != nil {
+			t.Fatalf("Upsert %s: %v", spec.id, err)
+		}
+	}
+
+	counts, err := s.CountByVerdict()
+	if err != nil {
+		t.Fatalf("CountByVerdict: %v", err)
+	}
+	for verdict, want := range map[string]int{"match": 1, "maybe": 2, "reject": 1} {
+		if counts[verdict] != want {
+			t.Errorf("%s: expected %d, got %d", verdict, want, counts[verdict])
+		}
+	}
+	if len(counts) != 3 {
+		t.Errorf("expected 3 verdicts, got %d: %v", len(counts), counts)
+	}
+}
+
+func TestPriceHistoryForGroupsByListingInObservationOrder(t *testing.T) {
+	s := openTemp(t)
+	now := time.Now()
+
+	tracked := sample(7500000)
+	tracked.ExternalID = "h1"
+	first, err := s.Upsert(tracked, now)
+	if err != nil {
+		t.Fatalf("Upsert h1: %v", err)
+	}
+	dropped := int64(7100000)
+	tracked.PriceCents = &dropped
+	if _, err := s.Upsert(tracked, now.Add(48*time.Hour)); err != nil {
+		t.Fatalf("Upsert h1 again: %v", err)
+	}
+
+	other := sample(6900000)
+	other.ExternalID = "h2"
+	second, err := s.Upsert(other, now)
+	if err != nil {
+		t.Fatalf("Upsert h2: %v", err)
+	}
+
+	history, err := s.PriceHistoryFor([]int64{first.ID, second.ID})
+	if err != nil {
+		t.Fatalf("PriceHistoryFor: %v", err)
+	}
+
+	points := history[first.ID]
+	if len(points) != 2 {
+		t.Fatalf("expected 2 points for the tracked listing, got %d", len(points))
+	}
+	if points[0].PriceCents != 7500000 || points[1].PriceCents != 7100000 {
+		t.Errorf("expected 7500000 then 7100000, got %d then %d",
+			points[0].PriceCents, points[1].PriceCents)
+	}
+	if len(history[second.ID]) != 1 {
+		t.Errorf("expected 1 point for the other listing, got %d", len(history[second.ID]))
+	}
+}
+
+func TestPriceHistoryForIgnoresListingsNotAsked(t *testing.T) {
+	s := openTemp(t)
+	now := time.Now()
+
+	wanted := sample(7500000)
+	wanted.ExternalID = "h1"
+	asked, err := s.Upsert(wanted, now)
+	if err != nil {
+		t.Fatalf("Upsert h1: %v", err)
+	}
+	skipped := sample(6900000)
+	skipped.ExternalID = "h2"
+	if _, err := s.Upsert(skipped, now); err != nil {
+		t.Fatalf("Upsert h2: %v", err)
+	}
+
+	history, err := s.PriceHistoryFor([]int64{asked.ID})
+	if err != nil {
+		t.Fatalf("PriceHistoryFor: %v", err)
+	}
+	if len(history) != 1 {
+		t.Fatalf("expected history for 1 listing, got %d: %v", len(history), history)
+	}
+}
+
+func TestPriceHistoryForWithoutIDsReturnsEmptyMap(t *testing.T) {
+	s := openTemp(t)
+
+	history, err := s.PriceHistoryFor(nil)
+	if err != nil {
+		t.Fatalf("PriceHistoryFor: %v", err)
+	}
+	if len(history) != 0 {
+		t.Errorf("expected an empty map, got %v", history)
+	}
+}
