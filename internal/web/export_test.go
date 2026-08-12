@@ -44,6 +44,12 @@ type decodedExport struct {
 		PriceCents *int64  `json:"price_cents"`
 		Km         *int    `json:"km"`
 		Phone      *string `json:"phone"`
+
+		PriceDropCents *int64 `json:"price_drop_cents"`
+		PriceHistory   []struct {
+			PriceCents int64     `json:"price_cents"`
+			At         time.Time `json:"at"`
+		} `json:"price_history"`
 	} `json:"listings"`
 }
 
@@ -220,5 +226,92 @@ func TestExportDoesNotEscapeURLs(t *testing.T) {
 
 	if !strings.Contains(body, "https://example.com/moto?ref=busca&pos=2") {
 		t.Errorf("the url should survive unescaped, got %s", body)
+	}
+}
+
+func droppedStore(t *testing.T) *store.Store {
+	t.Helper()
+	s := emptyStore(t)
+	at := time.Date(2026, 7, 2, 11, 4, 0, 0, time.UTC)
+
+	tracked := exportListingOf("d1", model.VerdictMatch, 7500000)
+	upsert(t, s, tracked, at)
+	dropped := int64(7100000)
+	tracked.PriceCents = &dropped
+	upsert(t, s, tracked, at.Add(48*time.Hour))
+
+	upsert(t, s, exportListingOf("d2", model.VerdictMatch, 6900000), at)
+	return s
+}
+
+func listingByExternalID(t *testing.T, decoded decodedExport, id string) int {
+	t.Helper()
+	for i, l := range decoded.Listings {
+		if l.ExternalID == id {
+			return i
+		}
+	}
+	t.Fatalf("listing %s not found in the export", id)
+	return -1
+}
+
+func TestExportCarriesTheWholePriceHistory(t *testing.T) {
+	srv := NewServer(droppedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+	tracked := decoded.Listings[listingByExternalID(t, decoded, "d1")]
+
+	if len(tracked.PriceHistory) != 2 {
+		t.Fatalf("expected 2 price points, got %d", len(tracked.PriceHistory))
+	}
+	if tracked.PriceHistory[0].PriceCents != 7500000 {
+		t.Errorf("first point should be the original price, got %d",
+			tracked.PriceHistory[0].PriceCents)
+	}
+	if tracked.PriceHistory[1].PriceCents != 7100000 {
+		t.Errorf("second point should be the drop, got %d",
+			tracked.PriceHistory[1].PriceCents)
+	}
+	if !tracked.PriceHistory[0].At.Before(tracked.PriceHistory[1].At) {
+		t.Error("price points should come in observation order")
+	}
+}
+
+func TestExportReportsThePriceDrop(t *testing.T) {
+	srv := NewServer(droppedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+	tracked := decoded.Listings[listingByExternalID(t, decoded, "d1")]
+
+	if tracked.PriceDropCents == nil {
+		t.Fatal("a listing that dropped should report the drop")
+	}
+	if *tracked.PriceDropCents != 400000 {
+		t.Errorf("expected a drop of 400000 cents, got %d", *tracked.PriceDropCents)
+	}
+}
+
+func TestExportLeavesTheDropNullWhenThePriceHeld(t *testing.T) {
+	srv := NewServer(droppedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+	steady := decoded.Listings[listingByExternalID(t, decoded, "d2")]
+
+	if steady.PriceDropCents != nil {
+		t.Errorf("a steady price should not report a drop, got %d", *steady.PriceDropCents)
+	}
+}
+
+func TestExportGivesAnEmptyHistoryToAPricelessListing(t *testing.T) {
+	s := emptyStore(t)
+	bare := exportListingOf("d3", model.VerdictMatch, 0)
+	bare.PriceCents = nil
+	upsert(t, s, bare, time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC))
+	srv := NewServer(s, []string{model.SourceOLX})
+
+	_, body := get(t, srv, "/export.json")
+
+	if !strings.Contains(body, `"price_history": []`) {
+		t.Errorf("a listing without history should export an empty array, got %s", body)
 	}
 }

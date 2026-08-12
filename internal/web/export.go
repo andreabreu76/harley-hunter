@@ -40,12 +40,21 @@ type exportListing struct {
 	PublishedAt        *time.Time `json:"published_at"`
 	FirstSeenAt        time.Time  `json:"first_seen_at"`
 	LastSeenAt         time.Time  `json:"last_seen_at"`
+
+	PriceDropCents *int64             `json:"price_drop_cents"`
+	PriceHistory   []exportPricePoint `json:"price_history"`
+}
+
+type exportPricePoint struct {
+	PriceCents int64     `json:"price_cents"`
+	At         time.Time `json:"at"`
 }
 
 type exportInput struct {
-	Rows   []store.Row
-	Counts map[string]int
-	Now    time.Time
+	Rows    []store.Row
+	History map[int64][]store.PricePoint
+	Counts  map[string]int
+	Now     time.Time
 }
 
 var exportedVerdicts = []model.Verdict{
@@ -74,13 +83,13 @@ func buildExport(in exportInput) exportEnvelope {
 
 	listings := make([]exportListing, 0, len(in.Rows))
 	for _, row := range in.Rows {
-		listings = append(listings, exportListingFrom(row))
+		listings = append(listings, exportListingFrom(row, in.History[row.ID]))
 	}
 
 	return exportEnvelope{GeneratedAt: in.Now.UTC(), Counts: counts, Listings: listings}
 }
 
-func exportListingFrom(row store.Row) exportListing {
+func exportListingFrom(row store.Row, history []store.PricePoint) exportListing {
 	return exportListing{
 		ID: row.ID, Source: row.Source, ExternalID: row.ExternalID, URL: row.URL,
 		Title: row.Title, Bike: row.Bike, Variant: row.Variant, Year: row.Year,
@@ -91,7 +100,28 @@ func exportListingFrom(row store.Row) exportListing {
 		PublishedAt:        utcOrNil(row.PublishedAt),
 		FirstSeenAt:        row.FirstSeenAt.UTC(),
 		LastSeenAt:         row.LastSeenAt.UTC(),
+		PriceDropCents:     priceDropCents(row),
+		PriceHistory:       exportPricePoints(history),
 	}
+}
+
+func priceDropCents(row store.Row) *int64 {
+	if row.PriceCents == nil || row.FirstPriceCents == nil {
+		return nil
+	}
+	drop := *row.FirstPriceCents - *row.PriceCents
+	if drop <= 0 {
+		return nil
+	}
+	return &drop
+}
+
+func exportPricePoints(points []store.PricePoint) []exportPricePoint {
+	exported := make([]exportPricePoint, 0, len(points))
+	for _, p := range points {
+		exported = append(exported, exportPricePoint{PriceCents: p.PriceCents, At: p.ObservedAt.UTC()})
+	}
+	return exported
 }
 
 func utcOrNil(at *time.Time) *time.Time {
@@ -125,7 +155,19 @@ func (s *server) exportJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	envelope := buildExport(exportInput{Rows: rows, Counts: counts, Now: time.Now()})
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	history, err := s.store.PriceHistoryFor(ids)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+
+	envelope := buildExport(exportInput{
+		Rows: rows, History: history, Counts: counts, Now: time.Now(),
+	})
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	encoder := json.NewEncoder(w)
