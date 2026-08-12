@@ -65,6 +65,16 @@ type exportListing struct {
 	PriceDropCents *int64             `json:"price_drop_cents"`
 	PriceHistory   []exportPricePoint `json:"price_history"`
 	Fipe           *exportFipe        `json:"fipe"`
+	Reposts        []exportRepost     `json:"reposts"`
+}
+
+type exportRepost struct {
+	ID          int64     `json:"id"`
+	Source      string    `json:"source"`
+	Verdict     string    `json:"verdict"`
+	PriceCents  *int64    `json:"price_cents"`
+	Km          *int      `json:"km"`
+	FirstSeenAt time.Time `json:"first_seen_at"`
 }
 
 type exportPricePoint struct {
@@ -77,6 +87,7 @@ type exportInput struct {
 	History  map[int64][]store.PricePoint
 	Refs     *fipe.Table
 	FipeRows []fipe.Reference
+	Groups   map[string][]store.Row
 	Counts   map[string]int
 	Now      time.Time
 }
@@ -115,7 +126,8 @@ func buildExport(in exportInput) exportEnvelope {
 
 	listings := make([]exportListing, 0, len(in.Rows))
 	for _, row := range in.Rows {
-		listings = append(listings, exportListingFrom(row, in.History[row.ID], in.Refs))
+		listings = append(listings, exportListingFrom(
+			row, in.History[row.ID], in.Refs, siblingsOf(row, in.Groups)))
 	}
 
 	return exportEnvelope{
@@ -124,7 +136,7 @@ func buildExport(in exportInput) exportEnvelope {
 	}
 }
 
-func exportListingFrom(row store.Row, history []store.PricePoint, refs *fipe.Table) exportListing {
+func exportListingFrom(row store.Row, history []store.PricePoint, refs *fipe.Table, siblings []store.Row) exportListing {
 	return exportListing{
 		ID: row.ID, Source: row.Source, ExternalID: row.ExternalID, URL: row.URL,
 		Title: row.Title, Bike: row.Bike, Variant: row.Variant, Year: row.Year,
@@ -138,7 +150,19 @@ func exportListingFrom(row store.Row, history []store.PricePoint, refs *fipe.Tab
 		PriceDropCents:     priceDropCents(row),
 		PriceHistory:       exportPricePoints(history),
 		Fipe:               exportFipeOf(row, refs),
+		Reposts:            exportReposts(siblings),
 	}
+}
+
+func exportReposts(siblings []store.Row) []exportRepost {
+	reposts := make([]exportRepost, 0, len(siblings))
+	for _, s := range siblings {
+		reposts = append(reposts, exportRepost{
+			ID: s.ID, Source: s.Source, Verdict: string(s.Verdict),
+			PriceCents: s.PriceCents, Km: s.Km, FirstSeenAt: s.FirstSeenAt.UTC(),
+		})
+	}
+	return reposts
 }
 
 func exportFipeOf(row store.Row, refs *fipe.Table) *exportFipe {
@@ -232,9 +256,15 @@ func (s *server) exportJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	groups, err := s.store.RepostGroups()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	envelope := buildExport(exportInput{
 		Rows: rows, History: history, Refs: fipe.NewTable(references),
-		FipeRows: references, Counts: counts, Now: time.Now(),
+		FipeRows: references, Groups: groups, Counts: counts, Now: time.Now(),
 	})
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

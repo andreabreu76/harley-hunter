@@ -66,6 +66,15 @@ type decodedExport struct {
 			BelowFipe   *bool    `json:"below_fipe"`
 			BaseVariant bool     `json:"base_variant"`
 		} `json:"fipe"`
+
+		Reposts []struct {
+			ID          int64     `json:"id"`
+			Source      string    `json:"source"`
+			Verdict     string    `json:"verdict"`
+			PriceCents  *int64    `json:"price_cents"`
+			Km          *int      `json:"km"`
+			FirstSeenAt time.Time `json:"first_seen_at"`
+		} `json:"reposts"`
 	} `json:"listings"`
 }
 
@@ -459,5 +468,82 @@ func TestExportFlagsAMatchThroughTheBaseVariant(t *testing.T) {
 	}
 	if !unknown.Fipe.BaseVariant {
 		t.Error("a fallback match should be flagged as a base match")
+	}
+}
+
+func repostedStore(t *testing.T) *store.Store {
+	t.Helper()
+	s := emptyStore(t)
+	at := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	twin := exportListingOf("r1", model.VerdictMatch, 7200000)
+	twin.Fingerprint = "street_glide|2015|6|curitiba"
+	upsert(t, s, twin, at)
+
+	elsewhere := exportListingOf("r2", model.VerdictReject, 7900000)
+	elsewhere.Source = model.SourceMercadoLivre
+	elsewhere.Fingerprint = twin.Fingerprint
+	upsert(t, s, elsewhere, at.Add(-72*time.Hour))
+
+	upsert(t, s, exportListingOf("r3", model.VerdictMatch, 6800000), at)
+	return s
+}
+
+func TestExportCarriesTheRepostSiblingWithItsOwnFields(t *testing.T) {
+	srv := NewServer(repostedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json?verdict=match")
+	twin := decoded.Listings[listingByExternalID(t, decoded, "r1")]
+
+	if len(twin.Reposts) != 1 {
+		t.Fatalf("expected a single sibling, got %d", len(twin.Reposts))
+	}
+	sibling := twin.Reposts[0]
+	if sibling.Source != model.SourceMercadoLivre {
+		t.Errorf("the sibling source should travel with it, got %q", sibling.Source)
+	}
+	if sibling.Verdict != "reject" {
+		t.Errorf("the sibling verdict should travel with it, got %q", sibling.Verdict)
+	}
+	if sibling.PriceCents == nil || *sibling.PriceCents != 7900000 {
+		t.Errorf("the sibling price should travel with it, got %v", sibling.PriceCents)
+	}
+	if sibling.Km == nil || *sibling.Km != 31000 {
+		t.Errorf("the sibling km should travel with it, got %v", sibling.Km)
+	}
+	if sibling.FirstSeenAt.IsZero() {
+		t.Error("the sibling should carry when it was first seen")
+	}
+}
+
+func TestExportCarriesASiblingLeftOutOfTheSlice(t *testing.T) {
+	srv := NewServer(repostedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json?verdict=match")
+
+	for _, listing := range decoded.Listings {
+		if listing.Verdict == "reject" {
+			t.Fatal("verdict=match should not export the reject as a listing")
+		}
+	}
+	twin := decoded.Listings[listingByExternalID(t, decoded, "r1")]
+	if len(twin.Reposts) != 1 {
+		t.Errorf("a sibling outside the slice still belongs in reposts, got %d", len(twin.Reposts))
+	}
+}
+
+func TestExportGivesAnEmptyRepostListToALoneListing(t *testing.T) {
+	srv := NewServer(repostedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json?verdict=match")
+	alone := decoded.Listings[listingByExternalID(t, decoded, "r3")]
+
+	if len(alone.Reposts) != 0 {
+		t.Errorf("a listing without a twin has no reposts, got %d", len(alone.Reposts))
+	}
+
+	_, body := get(t, srv, "/export.json?verdict=match")
+	if !strings.Contains(body, `"reposts": []`) {
+		t.Errorf("an empty repost list should be an array, got %s", body)
 	}
 }
