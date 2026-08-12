@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"time"
 
+	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
@@ -14,7 +16,26 @@ import (
 type exportEnvelope struct {
 	GeneratedAt time.Time       `json:"generated_at"`
 	Counts      map[string]int  `json:"counts"`
+	Fipe        []exportFipeRef `json:"fipe"`
 	Listings    []exportListing `json:"listings"`
+}
+
+type exportFipeRef struct {
+	Label      string `json:"label"`
+	Bike       string `json:"bike"`
+	Variant    string `json:"variant"`
+	Year       int    `json:"year"`
+	PriceCents int64  `json:"price_cents"`
+	Month      string `json:"month"`
+}
+
+type exportFipe struct {
+	Label       string   `json:"label"`
+	Year        int      `json:"year"`
+	PriceCents  int64    `json:"price_cents"`
+	GapPercent  *float64 `json:"gap_percent"`
+	BelowFipe   *bool    `json:"below_fipe"`
+	BaseVariant bool     `json:"base_variant"`
 }
 
 type exportListing struct {
@@ -43,6 +64,7 @@ type exportListing struct {
 
 	PriceDropCents *int64             `json:"price_drop_cents"`
 	PriceHistory   []exportPricePoint `json:"price_history"`
+	Fipe           *exportFipe        `json:"fipe"`
 }
 
 type exportPricePoint struct {
@@ -51,10 +73,12 @@ type exportPricePoint struct {
 }
 
 type exportInput struct {
-	Rows    []store.Row
-	History map[int64][]store.PricePoint
-	Counts  map[string]int
-	Now     time.Time
+	Rows     []store.Row
+	History  map[int64][]store.PricePoint
+	Refs     *fipe.Table
+	FipeRows []fipe.Reference
+	Counts   map[string]int
+	Now      time.Time
 }
 
 var exportedVerdicts = []model.Verdict{
@@ -81,15 +105,26 @@ func buildExport(in exportInput) exportEnvelope {
 		counts[string(verdict)] = in.Counts[string(verdict)]
 	}
 
-	listings := make([]exportListing, 0, len(in.Rows))
-	for _, row := range in.Rows {
-		listings = append(listings, exportListingFrom(row, in.History[row.ID]))
+	references := make([]exportFipeRef, 0, len(in.FipeRows))
+	for _, r := range in.FipeRows {
+		references = append(references, exportFipeRef{
+			Label: r.Label, Bike: r.Bike, Variant: r.Variant,
+			Year: r.Year, PriceCents: r.PriceCents, Month: r.Month,
+		})
 	}
 
-	return exportEnvelope{GeneratedAt: in.Now.UTC(), Counts: counts, Listings: listings}
+	listings := make([]exportListing, 0, len(in.Rows))
+	for _, row := range in.Rows {
+		listings = append(listings, exportListingFrom(row, in.History[row.ID], in.Refs))
+	}
+
+	return exportEnvelope{
+		GeneratedAt: in.Now.UTC(), Counts: counts,
+		Fipe: references, Listings: listings,
+	}
 }
 
-func exportListingFrom(row store.Row, history []store.PricePoint) exportListing {
+func exportListingFrom(row store.Row, history []store.PricePoint, refs *fipe.Table) exportListing {
 	return exportListing{
 		ID: row.ID, Source: row.Source, ExternalID: row.ExternalID, URL: row.URL,
 		Title: row.Title, Bike: row.Bike, Variant: row.Variant, Year: row.Year,
@@ -102,7 +137,33 @@ func exportListingFrom(row store.Row, history []store.PricePoint) exportListing 
 		LastSeenAt:         row.LastSeenAt.UTC(),
 		PriceDropCents:     priceDropCents(row),
 		PriceHistory:       exportPricePoints(history),
+		Fipe:               exportFipeOf(row, refs),
 	}
+}
+
+func exportFipeOf(row store.Row, refs *fipe.Table) *exportFipe {
+	if row.Year == nil {
+		return nil
+	}
+	reference, ok := refs.Lookup(row.Bike, row.Variant, *row.Year)
+	if !ok {
+		return nil
+	}
+
+	view := &exportFipe{
+		Label: reference.Label, Year: reference.Year,
+		PriceCents: reference.PriceCents, BaseVariant: reference.Base,
+	}
+	if row.PriceCents == nil || reference.PriceCents <= 0 {
+		return view
+	}
+
+	gap := float64(reference.PriceCents-*row.PriceCents) * 100 / float64(reference.PriceCents)
+	percent := math.Round(math.Abs(gap)*10) / 10
+	below := gap > 0
+	view.GapPercent = &percent
+	view.BelowFipe = &below
+	return view
 }
 
 func priceDropCents(row store.Row) *int64 {
@@ -165,8 +226,15 @@ func (s *server) exportJSON(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	references, err := s.store.FipeReferences()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err)
+		return
+	}
+
 	envelope := buildExport(exportInput{
-		Rows: rows, History: history, Counts: counts, Now: time.Now(),
+		Rows: rows, History: history, Refs: fipe.NewTable(references),
+		FipeRows: references, Counts: counts, Now: time.Now(),
 	})
 
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

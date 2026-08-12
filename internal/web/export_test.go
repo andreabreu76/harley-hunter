@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 )
@@ -36,7 +37,13 @@ func exportStore(t *testing.T) *store.Store {
 type decodedExport struct {
 	GeneratedAt time.Time      `json:"generated_at"`
 	Counts      map[string]int `json:"counts"`
-	Listings    []struct {
+	Fipe        []struct {
+		Label      string `json:"label"`
+		Year       int    `json:"year"`
+		PriceCents int64  `json:"price_cents"`
+		Month      string `json:"month"`
+	} `json:"fipe"`
+	Listings []struct {
 		ID         int64   `json:"id"`
 		ExternalID string  `json:"external_id"`
 		Verdict    string  `json:"verdict"`
@@ -50,6 +57,15 @@ type decodedExport struct {
 			PriceCents int64     `json:"price_cents"`
 			At         time.Time `json:"at"`
 		} `json:"price_history"`
+
+		Fipe *struct {
+			Label       string   `json:"label"`
+			Year        int      `json:"year"`
+			PriceCents  int64    `json:"price_cents"`
+			GapPercent  *float64 `json:"gap_percent"`
+			BelowFipe   *bool    `json:"below_fipe"`
+			BaseVariant bool     `json:"base_variant"`
+		} `json:"fipe"`
 	} `json:"listings"`
 }
 
@@ -313,5 +329,135 @@ func TestExportGivesAnEmptyHistoryToAPricelessListing(t *testing.T) {
 
 	if !strings.Contains(body, `"price_history": []`) {
 		t.Errorf("a listing without history should export an empty array, got %s", body)
+	}
+}
+
+func fipedStore(t *testing.T) *store.Store {
+	t.Helper()
+	s := emptyStore(t)
+	at := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
+
+	reference := fipe.Reference{
+		Code: "810055-1", Label: "FLHXS STREET GLIDE SPECIAL",
+		Bike: model.BikeStreetGlide, Variant: model.VariantBase,
+		Year: 2015, PriceCents: 8000000, Month: "agosto de 2026",
+	}
+	if err := s.SaveFipeReference(reference, at); err != nil {
+		t.Fatalf("SaveFipeReference: %v", err)
+	}
+
+	upsert(t, s, exportListingOf("f1", model.VerdictMatch, 7200000), at)
+	upsert(t, s, exportListingOf("f2", model.VerdictMatch, 8800000), at)
+
+	unmatched := exportListingOf("f3", model.VerdictMatch, 7200000)
+	unmatched.Bike = model.BikeRoadGlide
+	upsert(t, s, unmatched, at)
+
+	yearless := exportListingOf("f4", model.VerdictMatch, 7200000)
+	yearless.Year = nil
+	upsert(t, s, yearless, at)
+
+	priceless := exportListingOf("f5", model.VerdictMatch, 0)
+	priceless.PriceCents = nil
+	upsert(t, s, priceless, at)
+
+	unknownVariant := exportListingOf("f6", model.VerdictMatch, 7200000)
+	unknownVariant.Variant = model.VariantUnknown
+	upsert(t, s, unknownVariant, at)
+
+	return s
+}
+
+func TestExportListsTheFipeTableInTheEnvelope(t *testing.T) {
+	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+
+	if len(decoded.Fipe) != 1 {
+		t.Fatalf("expected the single stored reference, got %d", len(decoded.Fipe))
+	}
+	if decoded.Fipe[0].PriceCents != 8000000 || decoded.Fipe[0].Month != "agosto de 2026" {
+		t.Errorf("unexpected reference %+v", decoded.Fipe[0])
+	}
+}
+
+func TestExportMeasuresTheGapBelowFipe(t *testing.T) {
+	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+	cheap := decoded.Listings[listingByExternalID(t, decoded, "f1")]
+
+	if cheap.Fipe == nil {
+		t.Fatal("a listing that matches the table should carry its reference")
+	}
+	if cheap.Fipe.GapPercent == nil || *cheap.Fipe.GapPercent != 10 {
+		t.Errorf("7200000 against 8000000 is a 10%% gap, got %v", cheap.Fipe.GapPercent)
+	}
+	if cheap.Fipe.BelowFipe == nil || !*cheap.Fipe.BelowFipe {
+		t.Error("7200000 is below a fipe of 8000000")
+	}
+	if cheap.Fipe.BaseVariant {
+		t.Error("a listing with a known variant is not a base match")
+	}
+}
+
+func TestExportMeasuresTheGapAboveFipe(t *testing.T) {
+	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+	pricey := decoded.Listings[listingByExternalID(t, decoded, "f2")]
+
+	if pricey.Fipe == nil || pricey.Fipe.GapPercent == nil {
+		t.Fatal("a listing above fipe still carries its gap")
+	}
+	if *pricey.Fipe.GapPercent != 10 {
+		t.Errorf("8800000 against 8000000 is a 10%% gap, got %v", *pricey.Fipe.GapPercent)
+	}
+	if pricey.Fipe.BelowFipe == nil || *pricey.Fipe.BelowFipe {
+		t.Error("8800000 is above a fipe of 8000000")
+	}
+}
+
+func TestExportLeavesFipeNullWithoutAMatch(t *testing.T) {
+	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+
+	for _, id := range []string{"f3", "f4"} {
+		listing := decoded.Listings[listingByExternalID(t, decoded, id)]
+		if listing.Fipe != nil {
+			t.Errorf("%s has no fipe match and should export null, got %+v", id, listing.Fipe)
+		}
+	}
+}
+
+func TestExportKeepsTheReferenceWithoutAnAskingPrice(t *testing.T) {
+	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+	priceless := decoded.Listings[listingByExternalID(t, decoded, "f5")]
+
+	if priceless.Fipe == nil {
+		t.Fatal("a listing without a price still matches the table")
+	}
+	if priceless.Fipe.PriceCents != 8000000 {
+		t.Errorf("the reference price should survive, got %d", priceless.Fipe.PriceCents)
+	}
+	if priceless.Fipe.GapPercent != nil || priceless.Fipe.BelowFipe != nil {
+		t.Error("without an asking price there is no gap to report")
+	}
+}
+
+func TestExportFlagsAMatchThroughTheBaseVariant(t *testing.T) {
+	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+
+	decoded := exportOf(t, srv, "/export.json")
+	unknown := decoded.Listings[listingByExternalID(t, decoded, "f6")]
+
+	if unknown.Fipe == nil {
+		t.Fatal("an unknown variant falls back to the base reference")
+	}
+	if !unknown.Fipe.BaseVariant {
+		t.Error("a fallback match should be flagged as a base match")
 	}
 }
