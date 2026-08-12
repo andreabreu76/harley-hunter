@@ -5,7 +5,7 @@ PLIST := $(HOME)/Library/LaunchAgents/$(AGENT).plist
 LOGS := $(HOME)/Library/Logs
 
 .DEFAULT_GOAL := help
-.PHONY: help build crawl serve test fmt vet clean agent-install agent-uninstall agent-status logs
+.PHONY: help build crawl serve export test fmt vet clean agent-install agent-uninstall agent-status logs
 
 help: ## lista os targets
 	@grep -hE '^[a-z][a-z-]*:.*##' $(MAKEFILE_LIST) | sort | awk -F':.*## ' '{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
@@ -18,6 +18,10 @@ crawl: build ## roda uma coleta e dispara os alertas pendentes
 
 serve: build ## sobe o dashboard em http://127.0.0.1:8080
 	$(BIN) -config $(CONFIG) serve
+
+export: ## baixa o json do dashboard em export.json (exige o serve rodando)
+	curl -sf "http://127.0.0.1:8080/export.json$(if $(VERDICT),?verdict=$(VERDICT))" -o export.json \
+		&& echo "export.json gravado" || echo "o dashboard não respondeu — rode make serve antes"
 
 test: ## roda os testes
 	go test ./...

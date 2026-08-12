@@ -43,6 +43,14 @@ Dashboard local, sob demanda — não entra no agendamento:
 Sobe em <http://127.0.0.1:8080> com as abas de match, maybe, rejeitados e saúde
 das fontes. Encerra com Ctrl+C.
 
+Com o dashboard no ar, `GET /export.json` devolve o banco em JSON, para entregar
+a um agente. Traz match e maybe por padrão; `?verdict=match`, `?verdict=maybe` e
+`?verdict=all` estreitam ou ampliam o recorte. Cada anúncio vai com a referência
+FIPE e o gap em percentual, a queda desde o primeiro preço visto, o histórico
+completo e os reanúncios irmãos. O envelope leva ainda a contagem de todo o
+banco e a saúde de cada fonte. `make export` grava o arquivo, e `make export
+VERDICT=all` traz os descartados junto.
+
 Devolve à fila de alerta os anúncios que o dedup antigo calou sem avisar:
 
 ```bash
