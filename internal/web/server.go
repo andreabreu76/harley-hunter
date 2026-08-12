@@ -144,6 +144,7 @@ func NewServer(s *store.Store, sources []string) http.Handler {
 	}))
 	mux.HandleFunc("GET /listing/{id}", srv.detail)
 	mux.HandleFunc("POST /listing/{id}/state", srv.setState)
+	mux.HandleFunc("GET /export.json", srv.exportJSON)
 	mux.HandleFunc("GET /health", srv.health)
 	return mux
 }
