@@ -34,8 +34,9 @@ O repo **não tem remote**. Não existe PR.
 
 Roda na máquina do dono, não em servidor.
 
-- launchd `com.andreabreu.harleyhunter` a cada 7200s, via
-  `deploy/hunter-crawl.sh`.
+- launchd `com.andreabreu.harleyhunter` a cada 43200s (12h), via
+  `deploy/hunter-crawl.sh`. Mudar o `StartInterval` do plist só vale depois de
+  `make agent-install`.
 - Binário em `~/bin/hunter`. **Editar o repo não muda produção** — só
   `go build -o ~/bin/hunter ./cmd/hunter` muda.
 - Chrome dedicado na porta 9222, perfil em
