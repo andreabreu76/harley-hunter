@@ -37,6 +37,7 @@ type Row struct {
 	PublishedAt     *time.Time
 	FirstSeenAt     time.Time
 	LastSeenAt      time.Time
+	Fresh           bool
 	FirstPriceCents *int64
 
 	Notified           bool
@@ -141,6 +142,10 @@ const rowColumns = `
     l.id, l.source, l.external_id, l.url, l.title, l.bike, l.variant, l.year,
     l.price_cents, l.km, l.city, l.state, l.image_url, l.phone, l.verdict, l.user_state,
     l.status, l.fingerprint, l.published_at, l.first_seen_at, l.last_seen_at,
+    COALESCE(l.first_seen_at >= (
+        SELECT r.started_at FROM source_runs r
+        WHERE r.source = l.source AND r.status = 'ok' AND r.item_count > 0
+        ORDER BY r.started_at DESC, r.id DESC LIMIT 1), 0),
     (SELECT price_cents FROM price_history p WHERE p.listing_id = l.id ORDER BY p.observed_at ASC, p.id ASC LIMIT 1),
     l.notified, l.notified_price_cents
 `
@@ -150,7 +155,7 @@ func scanRow(scanner interface{ Scan(...any) error }) (Row, error) {
 	err := scanner.Scan(&r.ID, &r.Source, &r.ExternalID, &r.URL, &r.Title, &r.Bike,
 		&r.Variant, &r.Year, &r.PriceCents, &r.Km, &r.City, &r.State, &r.ImageURL,
 		&r.Phone, &r.Verdict, &r.UserState, &r.Status, &r.Fingerprint, &r.PublishedAt,
-		&r.FirstSeenAt, &r.LastSeenAt, &r.FirstPriceCents, &r.Notified, &r.NotifiedPriceCents)
+		&r.FirstSeenAt, &r.LastSeenAt, &r.Fresh, &r.FirstPriceCents, &r.Notified, &r.NotifiedPriceCents)
 	return r, err
 }
 

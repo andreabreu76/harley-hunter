@@ -70,6 +70,7 @@ type exportListing struct {
 	PublishedAt        *time.Time `json:"published_at"`
 	FirstSeenAt        time.Time  `json:"first_seen_at"`
 	LastSeenAt         time.Time  `json:"last_seen_at"`
+	Fresh              bool       `json:"fresh"`
 
 	PriceDropCents *int64             `json:"price_drop_cents"`
 	PriceHistory   []exportPricePoint `json:"price_history"`
@@ -183,6 +184,7 @@ func exportListingFrom(row store.Row, history []store.PricePoint, refs *fipe.Tab
 		PublishedAt:        utcOrNil(row.PublishedAt),
 		FirstSeenAt:        row.FirstSeenAt.UTC(),
 		LastSeenAt:         row.LastSeenAt.UTC(),
+		Fresh:              row.Fresh,
 		PriceDropCents:     priceDropCents(row),
 		PriceHistory:       exportPricePoints(history),
 		Fipe:               exportFipeOf(row, refs),

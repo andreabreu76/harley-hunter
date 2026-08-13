@@ -58,6 +58,7 @@ type decodedExport struct {
 		PriceCents *int64  `json:"price_cents"`
 		Km         *int    `json:"km"`
 		Phone      *string `json:"phone"`
+		Fresh      bool    `json:"fresh"`
 
 		PriceDropCents *int64 `json:"price_drop_cents"`
 		PriceHistory   []struct {

@@ -10,7 +10,7 @@
         <string>/Users/andreabreu/src/github.com/andreabreu76/harley-hunter/deploy/hunter-crawl.sh</string>
     </array>
     <key>StartInterval</key>
-    <integer>7200</integer>
+    <integer>43200</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>AbandonProcessGroup</key>
