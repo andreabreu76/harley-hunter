@@ -16,6 +16,7 @@
     <div class="corpo">
       <div class="linha-titulo">
         {{if eq .Row.UserState "new"}}<span class="novo" title="ainda não triado"></span>{{end}}
+        {{if .Row.Fresh}}<span class="estrela" title="descoberto na última coleta">★</span>{{end}}
         <a class="titulo" href="/listing/{{.Row.ID}}">{{.Row.Title}}</a>
       </div>
       {{template "selos" .}}
