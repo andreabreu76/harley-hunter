@@ -115,7 +115,7 @@ func recorderFor(t *testing.T, srv http.Handler, path string) *httptest.Response
 }
 
 func TestExportDefaultsToMatchAndMaybe(t *testing.T) {
-	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+	srv := NewServer(exportStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 
@@ -130,7 +130,7 @@ func TestExportDefaultsToMatchAndMaybe(t *testing.T) {
 }
 
 func TestExportNarrowsToASingleVerdict(t *testing.T) {
-	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+	srv := NewServer(exportStore(t), fixed(model.SourceOLX))
 
 	for _, wanted := range []string{"match", "maybe"} {
 		decoded := exportOf(t, srv, "/export.json?verdict="+wanted)
@@ -141,7 +141,7 @@ func TestExportNarrowsToASingleVerdict(t *testing.T) {
 }
 
 func TestExportAllBringsTheRejects(t *testing.T) {
-	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+	srv := NewServer(exportStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json?verdict=all")
 
@@ -151,7 +151,7 @@ func TestExportAllBringsTheRejects(t *testing.T) {
 }
 
 func TestExportRejectsAnUnknownVerdict(t *testing.T) {
-	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+	srv := NewServer(exportStore(t), fixed(model.SourceOLX))
 
 	code, _ := get(t, srv, "/export.json?verdict=lixo")
 
@@ -161,7 +161,7 @@ func TestExportRejectsAnUnknownVerdict(t *testing.T) {
 }
 
 func TestExportCountsTheWholeDatabaseNotTheSlice(t *testing.T) {
-	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+	srv := NewServer(exportStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json?verdict=match")
 
@@ -180,7 +180,7 @@ func TestExportKeepsTheClosedListing(t *testing.T) {
 	base := time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC)
 	upsert(t, s, exportListingOf("e4", model.VerdictMatch, 7200000), base)
 	expireEverythingUnseen(t, s, base)
-	srv := NewServer(s, []string{model.SourceOLX})
+	srv := NewServer(s, fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 
@@ -193,7 +193,7 @@ func TestExportKeepsTheClosedListing(t *testing.T) {
 }
 
 func TestExportServesJSONContentType(t *testing.T) {
-	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+	srv := NewServer(exportStore(t), fixed(model.SourceOLX))
 
 	rec := recorderFor(t, srv, "/export.json")
 
@@ -203,7 +203,7 @@ func TestExportServesJSONContentType(t *testing.T) {
 }
 
 func TestExportOfAnEmptyDatabaseIsAnEmptyList(t *testing.T) {
-	srv := NewServer(emptyStore(t), []string{model.SourceOLX})
+	srv := NewServer(emptyStore(t), fixed(model.SourceOLX))
 
 	code, body := get(t, srv, "/export.json")
 
@@ -226,7 +226,7 @@ func TestExportKeepsAbsentValuesNull(t *testing.T) {
 	bare.PriceCents = nil
 	bare.Km = nil
 	upsert(t, s, bare, time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC))
-	srv := NewServer(s, []string{model.SourceOLX})
+	srv := NewServer(s, fixed(model.SourceOLX))
 
 	_, body := get(t, srv, "/export.json")
 
@@ -239,7 +239,7 @@ func TestExportKeepsAbsentValuesNull(t *testing.T) {
 
 func TestExportDatesAreUTCWhateverTheLocalZone(t *testing.T) {
 	useSaoPauloZone(t)
-	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+	srv := NewServer(exportStore(t), fixed(model.SourceOLX))
 
 	_, body := get(t, srv, "/export.json")
 
@@ -253,7 +253,7 @@ func TestExportDoesNotEscapeURLs(t *testing.T) {
 	tracked := exportListingOf("e8", model.VerdictMatch, 7200000)
 	tracked.URL = "https://example.com/moto?ref=busca&pos=2"
 	upsert(t, s, tracked, time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC))
-	srv := NewServer(s, []string{model.SourceOLX})
+	srv := NewServer(s, fixed(model.SourceOLX))
 
 	_, body := get(t, srv, "/export.json")
 
@@ -289,7 +289,7 @@ func listingByExternalID(t *testing.T, decoded decodedExport, id string) int {
 }
 
 func TestExportCarriesTheWholePriceHistory(t *testing.T) {
-	srv := NewServer(droppedStore(t), []string{model.SourceOLX})
+	srv := NewServer(droppedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 	tracked := decoded.Listings[listingByExternalID(t, decoded, "d1")]
@@ -311,7 +311,7 @@ func TestExportCarriesTheWholePriceHistory(t *testing.T) {
 }
 
 func TestExportReportsThePriceDrop(t *testing.T) {
-	srv := NewServer(droppedStore(t), []string{model.SourceOLX})
+	srv := NewServer(droppedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 	tracked := decoded.Listings[listingByExternalID(t, decoded, "d1")]
@@ -325,7 +325,7 @@ func TestExportReportsThePriceDrop(t *testing.T) {
 }
 
 func TestExportLeavesTheDropNullWhenThePriceHeld(t *testing.T) {
-	srv := NewServer(droppedStore(t), []string{model.SourceOLX})
+	srv := NewServer(droppedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 	steady := decoded.Listings[listingByExternalID(t, decoded, "d2")]
@@ -340,7 +340,7 @@ func TestExportGivesAnEmptyHistoryToAPricelessListing(t *testing.T) {
 	bare := exportListingOf("d3", model.VerdictMatch, 0)
 	bare.PriceCents = nil
 	upsert(t, s, bare, time.Date(2026, 8, 1, 12, 0, 0, 0, time.UTC))
-	srv := NewServer(s, []string{model.SourceOLX})
+	srv := NewServer(s, fixed(model.SourceOLX))
 
 	_, body := get(t, srv, "/export.json")
 
@@ -386,7 +386,7 @@ func fipedStore(t *testing.T) *store.Store {
 }
 
 func TestExportListsTheFipeTableInTheEnvelope(t *testing.T) {
-	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+	srv := NewServer(fipedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 
@@ -399,7 +399,7 @@ func TestExportListsTheFipeTableInTheEnvelope(t *testing.T) {
 }
 
 func TestExportMeasuresTheGapBelowFipe(t *testing.T) {
-	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+	srv := NewServer(fipedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 	cheap := decoded.Listings[listingByExternalID(t, decoded, "f1")]
@@ -419,7 +419,7 @@ func TestExportMeasuresTheGapBelowFipe(t *testing.T) {
 }
 
 func TestExportMeasuresTheGapAboveFipe(t *testing.T) {
-	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+	srv := NewServer(fipedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 	pricey := decoded.Listings[listingByExternalID(t, decoded, "f2")]
@@ -436,7 +436,7 @@ func TestExportMeasuresTheGapAboveFipe(t *testing.T) {
 }
 
 func TestExportLeavesFipeNullWithoutAMatch(t *testing.T) {
-	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+	srv := NewServer(fipedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 
@@ -449,7 +449,7 @@ func TestExportLeavesFipeNullWithoutAMatch(t *testing.T) {
 }
 
 func TestExportKeepsTheReferenceWithoutAnAskingPrice(t *testing.T) {
-	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+	srv := NewServer(fipedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 	priceless := decoded.Listings[listingByExternalID(t, decoded, "f5")]
@@ -466,7 +466,7 @@ func TestExportKeepsTheReferenceWithoutAnAskingPrice(t *testing.T) {
 }
 
 func TestExportFlagsAMatchThroughTheBaseVariant(t *testing.T) {
-	srv := NewServer(fipedStore(t), []string{model.SourceOLX})
+	srv := NewServer(fipedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 	unknown := decoded.Listings[listingByExternalID(t, decoded, "f6")]
@@ -498,7 +498,7 @@ func repostedStore(t *testing.T) *store.Store {
 }
 
 func TestExportCarriesTheRepostSiblingWithItsOwnFields(t *testing.T) {
-	srv := NewServer(repostedStore(t), []string{model.SourceOLX})
+	srv := NewServer(repostedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json?verdict=match")
 	twin := decoded.Listings[listingByExternalID(t, decoded, "r1")]
@@ -525,7 +525,7 @@ func TestExportCarriesTheRepostSiblingWithItsOwnFields(t *testing.T) {
 }
 
 func TestExportCarriesASiblingLeftOutOfTheSlice(t *testing.T) {
-	srv := NewServer(repostedStore(t), []string{model.SourceOLX})
+	srv := NewServer(repostedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json?verdict=match")
 
@@ -541,7 +541,7 @@ func TestExportCarriesASiblingLeftOutOfTheSlice(t *testing.T) {
 }
 
 func TestExportGivesAnEmptyRepostListToALoneListing(t *testing.T) {
-	srv := NewServer(repostedStore(t), []string{model.SourceOLX})
+	srv := NewServer(repostedStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json?verdict=match")
 	alone := decoded.Listings[listingByExternalID(t, decoded, "r3")]
@@ -576,7 +576,7 @@ func TestExportReportsTheHealthOfEachSource(t *testing.T) {
 			t.Fatalf("RecordRun: %v", err)
 		}
 	}
-	srv := NewServer(s, []string{model.SourceOLX, model.SourceWebmotors})
+	srv := NewServer(s, fixed(model.SourceOLX, model.SourceWebmotors))
 
 	decoded := exportOf(t, srv, "/export.json")
 
@@ -596,7 +596,7 @@ func TestExportReportsTheHealthOfEachSource(t *testing.T) {
 }
 
 func TestExportLeavesASilentSourceWithoutARun(t *testing.T) {
-	srv := NewServer(exportStore(t), []string{model.SourceOLX})
+	srv := NewServer(exportStore(t), fixed(model.SourceOLX))
 
 	decoded := exportOf(t, srv, "/export.json")
 	olx := decoded.Sources[sourceIn(t, decoded, model.SourceOLX)]

@@ -2,81 +2,219 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
+	"github.com/andreabreu76/harley-hunter/internal/browser"
 	"github.com/andreabreu76/harley-hunter/internal/config"
 	"github.com/andreabreu76/harley-hunter/internal/crawl"
 	"github.com/andreabreu76/harley-hunter/internal/fipe"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/notify"
+	"github.com/andreabreu76/harley-hunter/internal/paths"
+	"github.com/andreabreu76/harley-hunter/internal/schedule"
 	"github.com/andreabreu76/harley-hunter/internal/source"
 	"github.com/andreabreu76/harley-hunter/internal/source/meta"
 	"github.com/andreabreu76/harley-hunter/internal/store"
 	"github.com/andreabreu76/harley-hunter/internal/web"
 )
 
+const dashboardAddr = "127.0.0.1:8080"
+
+const shutdownGrace = 5 * time.Second
+
 func main() {
-	configPath := flag.String("config", "config/config.yaml", "path to config file")
+	configPath := flag.String("config", "", "path to config file")
 	flag.Parse()
 
-	cfg, err := config.Load(*configPath)
+	dir, err := paths.AppDir()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+	path := *configPath
+	if path == "" {
+		path = paths.ConfigFile(dir)
+	}
+	if err := config.EnsureFile(path); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 
+	var runErr error
 	switch flag.Arg(0) {
 	case "crawl":
-		if err := runCrawl(cfg); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+		runErr = runCrawl(path, dir)
 	case "serve":
-		if err := runServe(cfg); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+		runErr = runServe(path, dir)
 	case "repair-silenced":
-		if err := runRepairSilenced(cfg); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
+		runErr = runRepairSilenced(path)
+	case "paths":
+		runErr = runPaths(dir, path)
 	default:
-		fmt.Fprintln(os.Stderr, "usage: hunter [-config path] <crawl|serve|repair-silenced>")
+		fmt.Fprintln(os.Stderr, "usage: hunter [-config path] <serve|crawl|repair-silenced|paths>")
 		os.Exit(2)
+	}
+	if runErr != nil {
+		fmt.Fprintln(os.Stderr, runErr)
+		os.Exit(1)
 	}
 }
 
-func runCrawl(cfg config.Config) error {
+func runPaths(dir, configPath string) error {
+	fmt.Printf("directory: %s\nconfig:    %s\ndatabase:  %s\nprofile:   %s\nlog:       %s\n",
+		dir, configPath, paths.DatabaseFile(dir), paths.ChromeProfile(dir), paths.LogFile(dir))
+	return nil
+}
+
+func runServe(configPath, dir string) error {
+	stopTee, err := teeOutput(paths.LogFile(dir))
+	if err != nil {
+		return err
+	}
+	defer stopTee()
+
+	watcher, err := config.NewWatcher(configPath)
+	if err != nil {
+		return err
+	}
+	db, err := store.Open(watcher.Current().DatabasePath)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	runner := &schedule.Runner{
+		Config:  watcher,
+		LastRun: db.LastRunStartedAt,
+		Collect: func(cfg config.Config) error { return collect(ctx, cfg, db, dir) },
+		Now:     time.Now,
+		Warn:    os.Stderr,
+	}
+	scheduled := make(chan struct{})
+	go func() {
+		defer close(scheduled)
+		if err := runner.Run(ctx); err != nil && !errors.Is(err, context.Canceled) {
+			fmt.Fprintf(os.Stderr, "the scheduler stopped: %v\n", err)
+		}
+	}()
+
+	srv := &http.Server{
+		Addr:    dashboardAddr,
+		Handler: web.NewServer(db, func() []string { return watcher.Current().Sources }),
+	}
+	closed := make(chan struct{})
+	go func() {
+		defer close(closed)
+		<-ctx.Done()
+		grace, cancel := context.WithTimeout(context.Background(), shutdownGrace)
+		defer cancel()
+		if err := srv.Shutdown(grace); err != nil {
+			fmt.Fprintf(os.Stderr, "the dashboard did not close cleanly: %v\n", err)
+		}
+	}()
+
+	fmt.Printf("config:    %s\n", watcher.Path())
+
+	var serveErr error
+	listener, err := net.Listen("tcp", dashboardAddr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "the dashboard has no address to answer on and stays down, the hunt goes on without it: %v\n", err)
+		<-ctx.Done()
+	} else {
+		fmt.Printf("dashboard: http://%s\n", dashboardAddr)
+		serveErr = srv.Serve(listener)
+	}
+
+	stop()
+	<-closed
+	select {
+	case <-scheduled:
+	case <-time.After(shutdownGrace):
+		fmt.Fprintln(os.Stderr, "the round in flight did not stop in time; the browser goes down with the process")
+	}
+
+	if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+		return serveErr
+	}
+	return nil
+}
+
+func runCrawl(configPath, dir string) error {
+	cfg, err := config.Load(configPath)
+	if err != nil {
+		return err
+	}
+	if err := config.Validate(cfg); err != nil {
+		return fmt.Errorf("nothing to hunt for: %w; edit %s", err, configPath)
+	}
 	db, err := store.Open(cfg.DatabasePath)
 	if err != nil {
 		return err
 	}
 	defer db.Close()
 
-	browser := source.NewBrowserFetcher(cfg.DevtoolsURL)
-	defer releaseTabs(browser)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
-	sources, err := buildSources(cfg, browser)
+	return collect(ctx, cfg, db, dir)
+}
+
+func collect(ctx context.Context, cfg config.Config, db *store.Store, dir string) error {
+	handle, err := openBrowser(ctx, cfg, dir)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err := handle.Close(); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "the browser was left running: %v\n", err)
+		}
+	}()
+
+	fetcher := source.NewBrowserFetcher(handle.DevtoolsURL())
+	defer releaseTabs(fetcher)
+
+	sources, err := buildSources(cfg, fetcher)
 	if err != nil {
 		return err
 	}
 
 	started := time.Now()
-	report, err := crawl.Run(context.Background(), sources, db, cfg)
+	report, err := crawl.Run(ctx, sources, db, cfg)
 	if err != nil {
 		return err
 	}
-	printReport(cfg, report, time.Since(started))
+	printReport(cfg, handle.DevtoolsURL(), report, time.Since(started))
 	refreshFipe(db)
 	sendAlerts(cfg, db)
 	return nil
+}
+
+func openBrowser(ctx context.Context, cfg config.Config, dir string) (*browser.Handle, error) {
+	opts := browser.Options{ExistingURL: cfg.DevtoolsURL}
+	if opts.ExistingURL == "" {
+		executable, err := browser.Locate()
+		if err != nil {
+			return nil, err
+		}
+		opts.ExecutablePath = executable
+		opts.ProfileDir = paths.ChromeProfile(dir)
+		opts.Headless = browser.HeadlessNeeded(runtime.GOOS, os.Getenv)
+	}
+	return browser.Launch(ctx, opts)
 }
 
 func refreshFipe(db *store.Store) {
@@ -90,19 +228,11 @@ func refreshFipe(db *store.Store) {
 	}
 }
 
-func runServe(cfg config.Config) error {
-	db, err := store.Open(cfg.DatabasePath)
+func runRepairSilenced(configPath string) error {
+	cfg, err := config.Load(configPath)
 	if err != nil {
 		return err
 	}
-	defer db.Close()
-
-	addr := "127.0.0.1:8080"
-	fmt.Printf("dashboard: http://%s\n", addr)
-	return http.ListenAndServe(addr, web.NewServer(db, cfg.Sources))
-}
-
-func runRepairSilenced(cfg config.Config) error {
 	db, err := store.Open(cfg.DatabasePath)
 	if err != nil {
 		return err
@@ -140,7 +270,7 @@ func sendAlerts(cfg config.Config, db *store.Store) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fipe references unavailable, alerts will not rank by discount: %v\n", err)
 	}
-	shown, err := crawl.Notify(context.Background(), db, notify.NewMacOS(), cfg.Crawl.MaxAlertsPerRun, fipe.NewTable(refs))
+	shown, err := crawl.Notify(context.Background(), db, notify.New(), cfg.Crawl.MaxAlertsPerRun, fipe.NewTable(refs))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "alerts failed after %d notifications: %v\n", shown, err)
 		return
@@ -150,17 +280,17 @@ func sendAlerts(cfg config.Config, db *store.Store) {
 
 var httpOnlySources = map[string]bool{model.SourceMobiauto: true}
 
-func releaseTabs(browser *source.BrowserFetcher) {
-	if err := browser.ReleaseTabs(context.Background()); err != nil {
+func releaseTabs(fetcher *source.BrowserFetcher) {
+	if err := fetcher.ReleaseTabs(context.Background()); err != nil {
 		fmt.Fprintf(os.Stderr, "browser tabs left open: %v\n", err)
 	}
 }
 
-func buildSources(cfg config.Config, browser *source.BrowserFetcher) ([]crawl.Source, error) {
+func buildSources(cfg config.Config, through *source.BrowserFetcher) ([]crawl.Source, error) {
 	direct := source.NewHTTPFetcher()
 	sources := make([]crawl.Source, 0, len(cfg.Sources))
 	for _, name := range cfg.Sources {
-		fetcher := source.PageFetcher(browser)
+		fetcher := source.PageFetcher(through)
 		if httpOnlySources[name] {
 			fetcher = direct
 		}
@@ -194,7 +324,7 @@ func browserSources(names []string) []string {
 	return through
 }
 
-func printReport(cfg config.Config, report crawl.Report, elapsed time.Duration) {
+func printReport(cfg config.Config, devtoolsURL string, report crawl.Report, elapsed time.Duration) {
 	for _, r := range report.Results {
 		if r.Err != nil && report.SharedCause == nil {
 			fmt.Printf("%-14s %s: %v\n", r.Source, r.Status, r.Err)
@@ -206,7 +336,7 @@ func printReport(cfg config.Config, report crawl.Report, elapsed time.Duration) 
 		fmt.Printf("all %d sources failed with the same cause: %v\n", len(report.Results), report.SharedCause)
 		if through := browserSources(cfg.Sources); len(through) > 0 {
 			fmt.Printf("%s read their pages through Chrome at %s; check that it is running\n",
-				strings.Join(through, ", "), cfg.DevtoolsURL)
+				strings.Join(through, ", "), devtoolsURL)
 		}
 	}
 	if report.StoreFailures > 0 {

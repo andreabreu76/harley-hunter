@@ -1,8 +1,9 @@
 # CLAUDE.md — harley-hunter
 
 Projeto pessoal do dono: caça um modelo específico de Harley-Davidson em seis
-marketplaces brasileiros e avisa por notificação do macOS. Um alerta perdido é
-uma moto perdida — é esse o critério que decide dúvidas de design.
+marketplaces brasileiros e avisa por notificação da área de trabalho — macOS,
+Linux e Windows, cada um pelo mecanismo nativo. Um alerta perdido é uma moto
+perdida — é esse o critério que decide dúvidas de design.
 
 ## CÓDIGO
 
@@ -17,7 +18,9 @@ uma moto perdida — é esse o critério que decide dúvidas de design.
 
 ## NUNCA COMMITAR
 
-- `.env` e `*.db` — `hunter.db` é o banco de produção e vive na raiz do repo.
+- `.env` e `*.db`. O banco de produção passou a viver no diretório por usuário
+  (`hunter paths`); o `hunter.db` na raiz do repo é o legado, que a migração
+  descrita no README leva para lá.
 - Arquivos de scratch dos agentes (`zz_*`, `*.bak`) — conferir `git status`
   antes de commitar.
 
@@ -34,29 +37,54 @@ O repo **não tem remote**. Não existe PR.
 
 Roda na máquina do dono, não em servidor.
 
-- launchd `com.andreabreu.harleyhunter` a cada 43200s (12h), via
-  `deploy/hunter-crawl.sh`. Mudar o `StartInterval` do plist só vale depois de
-  `make agent-install`.
+- `hunter serve` é um daemon: fica de pé e agenda a própria coleta. O relógio é o
+  `interval_hours` da seção `crawl` do config (padrão 12h), lido a quente —
+  mudar o intervalo não exige reiniciar nada nem mexer no plist.
+- O agente launchd `com.andreabreu.harleyhunter` é só autostart: `RunAtLoad` +
+  `KeepAlive` sobre `~/bin/hunter serve`, sem `StartInterval`. Ele declara o
+  `PATH` com `/opt/homebrew/bin` na frente, senão o `terminal-notifier` some e o
+  alerta cai no `osascript`, cujo banner não abre o anúncio no clique. Editar o
+  plist só vale depois de `make agent-install`.
 - Binário em `~/bin/hunter`. **Editar o repo não muda produção** — só
   `go build -o ~/bin/hunter ./cmd/hunter` muda.
-- Chrome dedicado na porta 9222, perfil em
-  `~/Library/Application Support/harley-hunter-chrome`. Instagram logado;
-  Facebook funciona deslogado.
-- Logs em `~/Library/Logs/harley-hunter.{log,error.log}`. Os
+- Config, banco, perfil do Chrome e log ficam no diretório por usuário, que
+  `hunter paths` imprime (`~/Library/Application Support/harley-hunter` no
+  macOS). `HARLEY_HUNTER_HOME` troca esse diretório inteiro.
+- O hunter acha e sobe o próprio Chrome, numa porta livre escolhida na hora, com
+  o perfil dedicado `chrome-profile` dentro daquele diretório, e o derruba no fim
+  da rodada. `devtools_url` preenchido inverte isso: passa a significar navegador
+  externo, que o hunter só consome.
+- Instagram e Facebook Marketplace exigem sessão logada nesse perfil. Sem ela a
+  fonte **falha**, com mensagem própria nomeando a tela de login
+  (`internal/source/meta/instagram.go:70`, `marketplace.go:60`), que vai para o
+  log e para `source_runs.error`. O `/health` não renderiza esse campo
+  (`internal/web/templates/health.html:12`), então no painel a fonte só aparece
+  parando de produzir — o motivo está sempre no log. O login é manual nesta fase
+  (Chrome aberto contra o perfil, com o daemon parado); a tela com botão é da
+  fase 8.
+- Log em `<diretório>/logs/hunter.log`, com rotação em 5 MB (`hunter.log.1`).
+  Escrito pelo `serve`; o `crawl` só imprime no terminal. O `stderr` do agente
+  cai em `logs/launchd.error.log`, ao lado. Os
   `ERROR: unhandled node event *dom.Event...` são ruído do DevTools, não do
   nosso código.
-- `Makefile` na raiz tem os atalhos (`build`, `crawl`, `serve`, `agent-install`,
-  `logs`).
+- `Makefile` na raiz tem os atalhos (`build`, `crawl`, `serve`, `cross`,
+  `agent-install`, `agent-status`, `logs`). Nenhum deles passa `-config`: o
+  binário resolve o diretório por usuário sozinho.
 
 ### Mexer em produção
 
-Nunca rodar verificação contra `hunter.db` direto — o launchd pode disparar no
-meio. Copiar o banco (**inclusive `-wal` e `-shm`**, porque roda em WAL), gerar
-um config apontando para a cópia, e trabalhar ali.
+Nunca rodar verificação contra o banco de produção direto — com `KeepAlive` o
+daemon está sempre de pé e pode coletar no meio. Copiar o banco (**inclusive
+`-wal` e `-shm`**, porque roda em WAL) e trabalhar na cópia, por um dos dois
+caminhos: `HARLEY_HUNTER_HOME=/tmp/hunter-scratch`, que troca o diretório
+inteiro, ou `-config` apontando para um config próprio.
 
 `database_path` relativo é resolvido em relação ao **diretório do arquivo de
-config**, não ao cwd. Por isso `../hunter.db` em `config/config.yaml` aponta
-para a raiz do repo.
+config**, não ao cwd. O `config/config.yaml` versionado no repo não traz mais
+`database_path` nem `devtools_url` — só as URLs de busca, que existem só ali.
+Copiá-lo para o diretório do app cai no `hunter.db` ao lado e no Chrome que o
+hunter sobe sozinho. Ele não é usado por nenhum alvo do Makefile e não é o config
+de produção.
 
 ### `repair-silenced`
 

@@ -47,7 +47,7 @@ func TestListStarsOnlyTheBatchFromTheLatestRun(t *testing.T) {
 	s := emptyStore(t)
 	twoBatches(t, s, time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC))
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 
 	if !strings.Contains(cardOf(t, body, "Glide Novo"), starMarker) {
 		t.Error("a listing discovered on the latest run must carry the star")
@@ -61,7 +61,7 @@ func TestExportTellsWhichListingsCameFromTheLatestRun(t *testing.T) {
 	s := emptyStore(t)
 	twoBatches(t, s, time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC))
 
-	decoded := exportOf(t, NewServer(s, []string{"olx"}), "/export.json")
+	decoded := exportOf(t, NewServer(s, fixed("olx")), "/export.json")
 
 	got := map[string]bool{}
 	for _, l := range decoded.Listings {
@@ -76,7 +76,7 @@ func TestListingDetailStarsAFreshListing(t *testing.T) {
 	s := emptyStore(t)
 	id := twoBatches(t, s, time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC))
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/listing/"+strconv.FormatInt(id, 10))
+	_, body := get(t, NewServer(s, fixed("olx")), "/listing/"+strconv.FormatInt(id, 10))
 
 	if !strings.Contains(body, starMarker) {
 		t.Error("the detail page of a fresh listing must carry the star")

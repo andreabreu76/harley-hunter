@@ -6,18 +6,19 @@
     <string>com.andreabreu.harleyhunter</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>/Users/andreabreu/src/github.com/andreabreu76/harley-hunter/deploy/hunter-crawl.sh</string>
+        <string>/Users/andreabreu/bin/hunter</string>
+        <string>serve</string>
     </array>
-    <key>StartInterval</key>
-    <integer>43200</integer>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
-    <key>AbandonProcessGroup</key>
+    <key>KeepAlive</key>
     <true/>
-    <key>StandardOutPath</key>
-    <string>/Users/andreabreu/Library/Logs/harley-hunter.log</string>
     <key>StandardErrorPath</key>
-    <string>/Users/andreabreu/Library/Logs/harley-hunter.error.log</string>
+    <string>/Users/andreabreu/Library/Application Support/harley-hunter/logs/launchd.error.log</string>
 </dict>
 </plist>

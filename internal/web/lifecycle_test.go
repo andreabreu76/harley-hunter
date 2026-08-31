@@ -58,7 +58,7 @@ func TestGoneListingStaysVisibleAndIsMarkedClosed(t *testing.T) {
 	id := upsert(t, s, glide("closed", "Glide Encerrada", 31000, 7200000, "abc"), base)
 	expireEverythingUnseen(t, s, base)
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	if !strings.Contains(body, "Glide Encerrada") {
 		t.Fatal("a closed listing must stay in its tab")
 	}
@@ -70,7 +70,7 @@ func TestGoneListingStaysVisibleAndIsMarkedClosed(t *testing.T) {
 		t.Errorf("a closed listing should render muted, card:\n%s", block)
 	}
 
-	_, detail := get(t, NewServer(s, []string{"olx"}), "/listing/"+strconv.FormatInt(id, 10))
+	_, detail := get(t, NewServer(s, fixed("olx")), "/listing/"+strconv.FormatInt(id, 10))
 	if !strings.Contains(detail, "encerrado") {
 		t.Errorf("the detail page should say the listing is closed, body:\n%s", detail)
 	}
@@ -80,7 +80,7 @@ func TestActiveListingCarriesNoClosedMarker(t *testing.T) {
 	s := emptyStore(t)
 	upsert(t, s, glide("live", "Glide Ativa", 31000, 7200000, "abc"), time.Now())
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	block := cardWith(t, body, "Glide Ativa")
 	if strings.Contains(block, "encerrad") {
 		t.Errorf("an active listing must not be marked closed, card:\n%s", block)
@@ -93,7 +93,7 @@ func TestCheaperRepostIsFlaggedAndLinksToItsPredecessor(t *testing.T) {
 	older := upsert(t, s, glide("first", "Glide Original", 31000, 7500000, "abc"), base)
 	newer := upsert(t, s, glide("second", "Glide Reanunciada", 31200, 7100000, "abc"), base.Add(72*time.Hour))
 
-	srv := NewServer(s, []string{"olx"})
+	srv := NewServer(s, fixed("olx"))
 	_, body := get(t, srv, "/")
 
 	repost := cardWith(t, body, "Glide Reanunciada")
@@ -134,7 +134,7 @@ func TestTwinOnAnotherSourceSaysWhereElseItIsListed(t *testing.T) {
 	newer := upsert(t, s, from(glide("second", "Glide Na Webmotors", 37234, 7100000, "abc"), "webmotors"),
 		base.Add(72*time.Hour))
 
-	_, body := get(t, NewServer(s, []string{"olx", "webmotors"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx", "webmotors")), "/")
 
 	twin := cardWith(t, body, "Glide Na Webmotors")
 	if !strings.Contains(twin, "anunciada também em olx") {
@@ -165,7 +165,7 @@ func TestTwinOnTheSameSourceIsCalledARepost(t *testing.T) {
 	upsert(t, s, glide("first", "Glide Original", 31000, 7500000, "abc"), base)
 	upsert(t, s, glide("second", "Glide Reanunciada", 31200, 7100000, "abc"), base.Add(72*time.Hour))
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	repost := cardWith(t, body, "Glide Reanunciada")
 	if !strings.Contains(repost, "possível reanúncio") {
 		t.Errorf("a second ad on the same site is the repost case, card:\n%s", repost)
@@ -181,7 +181,7 @@ func TestCheaperDeltaRoundsInsteadOfTruncating(t *testing.T) {
 	upsert(t, s, glide("first", "Glide Original", 31000, 7550000, "abc"), base)
 	upsert(t, s, glide("second", "Glide Reanunciada", 31200, 7100050, "abc"), base.Add(72*time.Hour))
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	repost := cardWith(t, body, "Glide Reanunciada")
 	if !strings.Contains(repost, "4.500 a menos") {
 		t.Errorf("a delta of R$ 4.499,50 should read as 4.500, card:\n%s", repost)
@@ -194,7 +194,7 @@ func TestRepostThatIsNotCheaperKeepsTheQuietFlag(t *testing.T) {
 	upsert(t, s, glide("first", "Glide Original", 31000, 7100000, "abc"), base)
 	upsert(t, s, glide("second", "Glide Reanunciada", 31200, 7500000, "abc"), base.Add(72*time.Hour))
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	repost := cardWith(t, body, "Glide Reanunciada")
 	if !strings.Contains(repost, "possível reanúncio") {
 		t.Errorf("the repost should still be flagged, card:\n%s", repost)
@@ -211,7 +211,7 @@ func TestGoneListingIsStillOfferedAsAPredecessor(t *testing.T) {
 	expireEverythingUnseen(t, s, base)
 	upsert(t, s, glide("second", "Glide Reanunciada", 31200, 7100000, "abc"), base.Add(72*time.Hour))
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	repost := cardWith(t, body, "Glide Reanunciada")
 	if !strings.Contains(repost, `href="/listing/`+strconv.FormatInt(older, 10)+`"`) {
 		t.Errorf("a closed listing is exactly the predecessor worth linking, card:\n%s", repost)
@@ -231,7 +231,7 @@ func TestListingsWithoutMileageNeverClaimARepost(t *testing.T) {
 	upsert(t, s, first, base)
 	upsert(t, s, second, base.Add(72*time.Hour))
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	if strings.Contains(body, "reanúncio") {
 		t.Errorf("without mileage the fingerprint cannot claim a repost, body:\n%s", body)
 	}
@@ -241,7 +241,7 @@ func TestUniqueListingCarriesNoRepostFlag(t *testing.T) {
 	s := emptyStore(t)
 	upsert(t, s, glide("only", "Glide Sozinha", 31000, 7200000, "abc"), time.Now())
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	if strings.Contains(body, "reanúncio") {
 		t.Errorf("a listing without twins must not be flagged, body:\n%s", body)
 	}

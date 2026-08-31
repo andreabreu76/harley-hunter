@@ -1,4 +1,3 @@
-database_path: ../hunter.db
 sources:
   - olx
   - mercadolivre
@@ -6,7 +5,6 @@ sources:
   - mobiauto
   - instagram
   - marketplace
-devtools_url: http://127.0.0.1:9222
 source_urls:
   olx:
     - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide

@@ -372,6 +372,19 @@ func (s *Store) LastRunAt(source string) (time.Time, bool, error) {
 	return at, true, nil
 }
 
+func (s *Store) LastRunStartedAt() (time.Time, bool, error) {
+	var at time.Time
+	err := s.db.QueryRow(
+		"SELECT started_at FROM source_runs ORDER BY started_at DESC, id DESC LIMIT 1").Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, fmt.Errorf("querying the last round: %w", err)
+	}
+	return at, true, nil
+}
+
 func collectRows(rows *sql.Rows) ([]Row, error) {
 	var result []Row
 	for rows.Next() {
