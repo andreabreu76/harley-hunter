@@ -216,19 +216,27 @@ navegador sozinho.
 
 ## Instagram e Facebook Marketplace exigem sessão logada
 
-Estas duas fontes não devolvem nada para quem não está logado — e o jeito como
-elas não devolvem é o problema.
+Estas duas fontes não devolvem nada para quem não está logado — e o problema não
+é a falha em si, é onde o motivo dela aparece.
 
-**Elas não dão erro: elas emudecem.** Sem sessão, ou com a sessão expirada, o que
-volta é uma página que o parser lê sem reclamar e da qual não sai nenhum anúncio.
-A rodada termina em `ok` com zero itens — indistinguível de "não tinha nenhuma
-Harley à venda hoje". O painel de saúde marca uma fonte como `suspect` depois de
-duas rodadas vazias seguidas, mas só se ela já vinha trazendo volume; numa
-instalação nova, em que o Instagram nunca trouxe nada, ela fica em `ok` com zeros
-para sempre. Só quando a página devolvida é literalmente o formulário de login é
-que a fonte falha alto. Ou seja: se Instagram e Marketplace vivem em zero
-enquanto as outras fontes trazem anúncios, desconfie da sessão antes de
-desconfiar do mercado.
+**A fonte falha com nome e sobrenome, mas só o log conta o porquê.** Quando a
+sessão falta ou expirou, o Instagram responde com a tela de login e a rodada
+daquela fonte morre com `instagram answered with the login screen: the browser
+profile is not signed in`. O Facebook faz o mesmo, com `facebook answered with
+the login screen instead of marketplace results`. A frase sai no resumo da
+rodada, vai para o `logs/hunter.log` e fica gravada junto com a coleta falha.
+
+O painel de saúde, porém, não mostra esse texto. Ele lista o nome da fonte, o
+estado, a última coleta e a contagem de itens por rodada — e nada mais. Como uma
+rodada que falha conta como zero itens, o que se vê no painel é uma fonte que
+parou de produzir: ela vira `suspect` depois de duas rodadas vazias seguidas,
+desde que já viesse trazendo volume, e numa instalação em que ela nunca produziu
+nada continua em `ok` com zeros. Em nenhum dos casos o painel diz por quê — e o
+`export.json` carrega os mesmos campos, sem a mensagem. O log é o único lugar
+onde a frase aparece.
+
+Ou seja: quando o Instagram ou o Marketplace secam, a resposta está no log, e
+quase sempre é a sessão. O conserto é logar de novo no perfil dedicado.
 
 A sessão mora no perfil dedicado do Chrome — aquele que o `hunter paths` mostra
 na linha `profile:`. Como é o mesmo perfil em toda rodada, basta logar uma vez: a
@@ -281,12 +289,14 @@ mantém no ar, não a do perfil dedicado: logue nele.
 
 A Mobiauto continua coletando com o navegador fora do ar: ela fala HTTP direto,
 com User-Agent de navegador e timeout próprio. Numa rodada em que o Chrome não
-sobe, as outras cinco falham e a Mobiauto entrega normalmente — e o painel de
-saúde mostra exatamente isso, fonte a fonte.
+sobe, as outras cinco falham e a Mobiauto entrega normalmente. O painel de saúde
+mostra quais pararam de produzir, fonte a fonte; o motivo de cada falha, esse sai
+no log.
 
 Fonte que responde algo diferente de `200`, ou que devolve página de desafio no
 lugar do payload esperado, falha alto e vira erro da rodada; não passa em branco.
-A exceção conhecida são o Instagram e o Marketplace deslogados, descritos acima.
+O Instagram e o Marketplace sem sessão entram nessa mesma regra: a tela de login
+é tratada como falha, com mensagem própria — que aparece no log, e não no painel.
 
 ## Logs
 

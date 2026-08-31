@@ -54,10 +54,14 @@ Roda na máquina do dono, não em servidor.
   o perfil dedicado `chrome-profile` dentro daquele diretório, e o derruba no fim
   da rodada. `devtools_url` preenchido inverte isso: passa a significar navegador
   externo, que o hunter só consome.
-- Instagram e Facebook Marketplace exigem sessão logada nesse perfil. Sem ela não
-  dão erro: voltam vazios, o que no painel parece "não tinha nada à venda". O
-  login é manual nesta fase (Chrome aberto contra o perfil, com o daemon parado);
-  a tela com botão é da fase 8.
+- Instagram e Facebook Marketplace exigem sessão logada nesse perfil. Sem ela a
+  fonte **falha**, com mensagem própria nomeando a tela de login
+  (`internal/source/meta/instagram.go:70`, `marketplace.go:60`), que vai para o
+  log e para `source_runs.error`. O `/health` não renderiza esse campo
+  (`internal/web/templates/health.html:12`), então no painel a fonte só aparece
+  parando de produzir — o motivo está sempre no log. O login é manual nesta fase
+  (Chrome aberto contra o perfil, com o daemon parado); a tela com botão é da
+  fase 8.
 - Log em `<diretório>/logs/hunter.log`, com rotação em 5 MB (`hunter.log.1`).
   Escrito pelo `serve`; o `crawl` só imprime no terminal. O `stderr` do agente
   cai em `logs/launchd.error.log`, ao lado. Os
