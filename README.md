@@ -209,10 +209,10 @@ naquele endereço e usa o que estiver lá. Se ninguém responder, ele falha e pe
 para limpar o campo. Use isso quando quiser um Chrome seu, aberto na tela, com a
 sessão logada à vista.
 
-O `config/config.yaml` versionado no repositório ainda traz
-`devtools_url: http://127.0.0.1:9222`, herança do script antigo. Quem copiar esse
-arquivo herda o modo de navegador externo; apague a linha para o hunter cuidar do
-navegador sozinho.
+O `config/config.yaml` versionado no repositório não traz mais `devtools_url`:
+quem copiar esse arquivo cai no modo em que o hunter cuida do navegador sozinho.
+Um config herdado da versão anterior ainda pode trazer a linha — apague-a para
+voltar a esse modo.
 
 ## Instagram e Facebook Marketplace exigem sessão logada
 
@@ -342,7 +342,6 @@ launchctl bootout gui/$(id -u)/com.andreabreu.harleyhunter
 mkdir -p "$HOME/Library/Application Support/harley-hunter"
 cp hunter.db hunter.db-wal hunter.db-shm "$HOME/Library/Application Support/harley-hunter/"
 cp config/config.yaml "$HOME/Library/Application Support/harley-hunter/"
-make agent-install
 ```
 
 São os **três** arquivos do banco, e não só o `.db`: o SQLite roda em modo WAL, e
@@ -350,13 +349,26 @@ copiar apenas o primeiro descarta as transações que ainda não foram integrada
 ou seja, joga fora o histórico recente de preços e de alertas já enviados, que é
 justamente o que impede o hunter de reavisar tudo de novo.
 
-Depois de copiar, no config novo:
+O agente fica para o fim, e é de propósito: com `RunAtLoad` e `KeepAlive` ele
+começa a coletar no instante em que é carregado, e um config que ainda aponte
+para fora do diretório do app o levaria a abrir um banco vazio — perdendo as
+âncoras de preço e o histórico de alertas. Antes de carregá-lo, abra o config
+novo e confira que não sobrou nenhuma destas duas linhas. O
+`config/config.yaml` do repositório já vem sem as duas, mas uma cópia editada à
+mão pode trazê-las:
 
-- apague a linha `database_path`, para que ele use o `hunter.db` ao lado;
-- apague também a linha `devtools_url`, a menos que você queira mesmo continuar
-  apontando para um Chrome que você sobe por conta própria.
+- `database_path`, que apontaria para o banco antigo, na raiz do repositório;
+  sem ela o hunter usa o `hunter.db` ao lado do config, que é o que você acabou
+  de copiar;
+- `devtools_url`, herança do Chrome que se subia à mão; sem ela o hunter sobe e
+  derruba o navegador sozinho.
 
-Confira o resultado com `hunter paths` antes de subir o agente.
+Confira o resultado com `hunter paths`: a linha `database:` tem que apontar para
+o banco dentro do diretório do app. Só então carregue o agente:
+
+```bash
+make agent-install
+```
 
 ## Documentação
 

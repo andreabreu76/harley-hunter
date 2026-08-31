@@ -80,10 +80,11 @@ caminhos: `HARLEY_HUNTER_HOME=/tmp/hunter-scratch`, que troca o diretório
 inteiro, ou `-config` apontando para um config próprio.
 
 `database_path` relativo é resolvido em relação ao **diretório do arquivo de
-config**, não ao cwd. O `config/config.yaml` versionado no repo ainda traz
-`../hunter.db` e `devtools_url: http://127.0.0.1:9222`, herança da versão
-anterior; ele não é mais usado por nenhum alvo do Makefile e não é o config de
-produção.
+config**, não ao cwd. O `config/config.yaml` versionado no repo não traz mais
+`database_path` nem `devtools_url` — só as URLs de busca, que existem só ali.
+Copiá-lo para o diretório do app cai no `hunter.db` ao lado e no Chrome que o
+hunter sobe sozinho. Ele não é usado por nenhum alvo do Makefile e não é o config
+de produção.
 
 ### `repair-silenced`
 
