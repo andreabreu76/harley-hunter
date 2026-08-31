@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"os"
 
@@ -8,6 +9,8 @@ import (
 )
 
 const maxLogBytes = 5 << 20
+
+const drainBuffer = 32 << 10
 
 func teeOutput(path string) (func(), error) {
 	file, err := logging.Open(path, maxLogBytes)
@@ -23,16 +26,34 @@ func teeOutput(path string) (func(), error) {
 	terminalOut, terminalErr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = writer, writer
 
-	copied := make(chan struct{})
+	drained := make(chan struct{})
 	go func() {
-		io.Copy(io.MultiWriter(terminalOut, file), reader)
-		close(copied)
+		defer close(drained)
+		drain(reader, terminalOut, file, terminalErr)
 	}()
 
 	return func() {
 		os.Stdout, os.Stderr = terminalOut, terminalErr
 		writer.Close()
-		<-copied
+		<-drained
 		file.Close()
 	}, nil
+}
+
+func drain(reader io.Reader, terminal, file, complaints io.Writer) {
+	buffer := make([]byte, drainBuffer)
+	reported := false
+	for {
+		read, readErr := reader.Read(buffer)
+		if read > 0 {
+			terminal.Write(buffer[:read])
+			if _, err := file.Write(buffer[:read]); err != nil && !reported {
+				reported = true
+				fmt.Fprintf(complaints, "the log file stopped taking writes, the hunt goes on without it: %v\n", err)
+			}
+		}
+		if readErr != nil {
+			return
+		}
+	}
 }
