@@ -309,7 +309,10 @@ O Instagram e o Marketplace sem sessão entram nessa mesma regra: a tela de logi
 
 O log do daemon é o `logs/hunter.log` dentro do diretório do app — resumo por
 fonte, contagem de novos matches, alertas mostrados e os erros da rodada. Ele
-rotaciona ao passar de 5 MB, guardando o anterior como `hunter.log.1`. Quem roda
+rotaciona ao passar de 5 MB, guardando o anterior como `hunter.log.1`; se a
+rotação não puder acontecer — um `hunter.log.1` que virou diretório, um diretório
+sem permissão de escrita —, ele diz isso uma vez e segue escrevendo no mesmo
+arquivo, sem rotacionar, em vez de emudecer. Quem roda
 `hunter serve` no terminal vê o mesmo texto na tela; o `hunter crawl` só imprime
 no terminal, sem escrever no arquivo.
 
