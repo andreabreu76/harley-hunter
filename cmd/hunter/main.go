@@ -169,7 +169,11 @@ func collect(ctx context.Context, cfg config.Config, db *store.Store, dir string
 	if err != nil {
 		return err
 	}
-	defer handle.Close()
+	defer func() {
+		if err := handle.Close(); err != nil && ctx.Err() == nil {
+			fmt.Fprintf(os.Stderr, "the browser was left running: %v\n", err)
+		}
+	}()
 
 	fetcher := source.NewBrowserFetcher(handle.DevtoolsURL())
 	defer releaseTabs(fetcher)
