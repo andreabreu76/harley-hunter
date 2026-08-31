@@ -370,8 +370,17 @@ mão pode trazê-las:
 - `devtools_url`, herança do Chrome que se subia à mão; sem ela o hunter sobe e
   derruba o navegador sozinho.
 
-Confira o resultado com `hunter paths`: a linha `database:` tem que apontar para
-o banco dentro do diretório do app. Só então carregue o agente:
+A conferência é no arquivo, e não no `hunter paths`: o comando imprime onde o
+hunter guarda as coisas por padrão, mas não lê o `database_path` do config, então
+ele mostraria o caminho certo mesmo com a linha errada lá dentro. O que decide é
+o `grep` não devolver nada:
+
+```bash
+grep -n "database_path\|devtools_url" "$HOME/Library/Application Support/harley-hunter/config.yaml"
+```
+
+Com o config limpo e o `hunter paths` apontando para o diretório do app, carregue
+o agente:
 
 ```bash
 make agent-install
