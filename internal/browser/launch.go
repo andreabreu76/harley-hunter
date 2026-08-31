@@ -2,9 +2,11 @@ package browser
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"os"
 	"os/exec"
 	"time"
 )
@@ -31,6 +33,7 @@ type Handle struct {
 
 type deps struct {
 	start    func(*exec.Cmd) error
+	wait     func(*exec.Cmd) error
 	kill     func(*exec.Cmd) error
 	probe    func(url string) error
 	freePort func() (int, error)
@@ -40,6 +43,7 @@ type deps struct {
 func Launch(ctx context.Context, opts Options) (*Handle, error) {
 	return launch(ctx, opts, deps{
 		start:    func(cmd *exec.Cmd) error { return cmd.Start() },
+		wait:     func(cmd *exec.Cmd) error { return cmd.Wait() },
 		kill:     func(cmd *exec.Cmd) error { return cmd.Process.Kill() },
 		probe:    probeDevtools,
 		freePort: freePort,
@@ -65,6 +69,7 @@ func launch(ctx context.Context, opts Options, d deps) (*Handle, error) {
 	if err := d.start(cmd); err != nil {
 		return nil, fmt.Errorf("starting %s: %w", opts.ExecutablePath, err)
 	}
+	go d.wait(cmd)
 
 	handle := &Handle{url: url, cmd: cmd, kill: d.kill, owned: true}
 	for attempt := 0; attempt < probeAttempts; attempt++ {
@@ -107,7 +112,10 @@ func (h *Handle) Close() error {
 	if !h.owned || h.cmd == nil || h.kill == nil {
 		return nil
 	}
-	return h.kill(h.cmd)
+	if err := h.kill(h.cmd); err != nil && !errors.Is(err, os.ErrProcessDone) {
+		return err
+	}
+	return nil
 }
 
 func probeDevtools(url string) error {

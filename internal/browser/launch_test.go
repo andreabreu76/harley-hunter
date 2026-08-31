@@ -3,6 +3,7 @@ package browser
 import (
 	"context"
 	"errors"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -73,6 +74,7 @@ func TestLaunchReusesAnExistingBrowserAndNeverKillsIt(t *testing.T) {
 	killed := 0
 	d := deps{
 		start:    func(*exec.Cmd) error { started++; return nil },
+		wait:     func(*exec.Cmd) error { return nil },
 		kill:     func(*exec.Cmd) error { killed++; return nil },
 		probe:    func(string) error { return nil },
 		freePort: func() (int, error) { return 9333, nil },
@@ -100,6 +102,7 @@ func TestLaunchReusesAnExistingBrowserAndNeverKillsIt(t *testing.T) {
 func TestLaunchFailsWhenTheConfiguredBrowserIsNotAnswering(t *testing.T) {
 	d := deps{
 		start:    func(*exec.Cmd) error { t.Fatal("started a browser instead of failing"); return nil },
+		wait:     func(*exec.Cmd) error { return nil },
 		kill:     func(*exec.Cmd) error { return nil },
 		probe:    func(string) error { return errors.New("connection refused") },
 		freePort: func() (int, error) { return 9333, nil },
@@ -121,6 +124,7 @@ func TestLaunchStartsAndClosesItsOwnBrowser(t *testing.T) {
 	answers := false
 	d := deps{
 		start: func(*exec.Cmd) error { started++; answers = true; return nil },
+		wait:  func(*exec.Cmd) error { return nil },
 		kill:  func(*exec.Cmd) error { killed++; return nil },
 		probe: func(string) error {
 			if answers {
@@ -157,6 +161,7 @@ func TestLaunchKillsTheBrowserThatNeverAnswers(t *testing.T) {
 	killed := 0
 	d := deps{
 		start:    func(*exec.Cmd) error { return nil },
+		wait:     func(*exec.Cmd) error { return nil },
 		kill:     func(*exec.Cmd) error { killed++; return nil },
 		probe:    func(string) error { return errors.New("connection refused") },
 		freePort: func() (int, error) { return 9444, nil },
@@ -168,5 +173,48 @@ func TestLaunchKillsTheBrowserThatNeverAnswers(t *testing.T) {
 	}
 	if killed != 1 {
 		t.Errorf("a browser that never answered was left running (killed = %d)", killed)
+	}
+}
+
+func TestLaunchReapsTheBrowserItStarted(t *testing.T) {
+	waited := make(chan struct{}, 1)
+	d := deps{
+		start:    func(*exec.Cmd) error { return nil },
+		wait:     func(*exec.Cmd) error { waited <- struct{}{}; return nil },
+		kill:     func(*exec.Cmd) error { return nil },
+		probe:    func(string) error { return nil },
+		freePort: func() (int, error) { return 9444, nil },
+		sleep:    func(time.Duration) {},
+	}
+
+	h, err := launch(context.Background(), Options{ExecutablePath: "/usr/bin/chromium", ProfileDir: "/tmp/profile"}, d)
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	defer h.Close()
+
+	select {
+	case <-waited:
+	case <-time.After(time.Second):
+		t.Fatal("nobody is waiting on the browser: killing it leaves a zombie and the watchdog goroutine behind")
+	}
+}
+
+func TestCloseAcceptsABrowserThatHadAlreadyExited(t *testing.T) {
+	d := deps{
+		start:    func(*exec.Cmd) error { return nil },
+		wait:     func(*exec.Cmd) error { return nil },
+		kill:     func(*exec.Cmd) error { return os.ErrProcessDone },
+		probe:    func(string) error { return nil },
+		freePort: func() (int, error) { return 9444, nil },
+		sleep:    func(time.Duration) {},
+	}
+
+	h, err := launch(context.Background(), Options{ExecutablePath: "/usr/bin/chromium", ProfileDir: "/tmp/profile"}, d)
+	if err != nil {
+		t.Fatalf("launch: %v", err)
+	}
+	if err := h.Close(); err != nil {
+		t.Errorf("Close complained about a browser that had already exited on its own: %v", err)
 	}
 }
