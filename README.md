@@ -182,6 +182,11 @@ make logs             # acompanha o log do daemon
 make agent-uninstall  # descarrega o agente
 ```
 
+O plist também declara o `PATH` do agente, com `/opt/homebrew/bin` e
+`/usr/local/bin` na frente dos diretórios do sistema. Sem isso o `launchd` entrega
+um `PATH` mínimo, o `terminal-notifier` some e o clique no banner deixa de abrir o
+anúncio — veja [Logs](#logs).
+
 Depois de editar o plist é preciso repetir o `make agent-install` — o `launchd`
 não relê o arquivo sozinho. Mudar o intervalo das rodadas, porém, não passa mais
 por aqui: é o `interval_hours` do config.
@@ -300,11 +305,11 @@ Duas linhas que aparecem no log e merecem tradução:
 - `ERROR: unhandled node event ... dom.Event` é ruído do chromedp conversando com
   o DevTools, não do nosso código.
 - O aviso de que o `terminal-notifier` não foi encontrado no `PATH` quer dizer que
-  o alerta caiu no `osascript` e o clique no banner deixou de abrir o anúncio.
-  Rodando `hunter serve` no terminal isso não acontece; sob o agente do `launchd`
-  acontece, porque o `PATH` entregue ao agente é o mínimo
-  (`/usr/bin:/bin:/usr/sbin:/sbin`), onde o Homebrew não está. A saída é declarar
-  o `PATH` no plist e refazer o `make agent-install`:
+  o alerta caiu no `osascript` — o banner ainda aparece, mas o clique deixou de
+  abrir o anúncio. É uma falha silenciosa, e a causa costuma ser uma só: o `PATH`
+  que o `launchd` entrega a um agente é o mínimo (`/usr/bin:/bin:/usr/sbin:/sbin`),
+  onde o Homebrew não está. Por isso o plist deste repositório já declara o `PATH`
+  explicitamente:
 
 ```xml
 <key>EnvironmentVariables</key>
@@ -313,6 +318,9 @@ Duas linhas que aparecem no log e merecem tradução:
     <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
 </dict>
 ```
+
+  Se o aviso aparecer mesmo assim, o `terminal-notifier` está fora desses
+  diretórios: acrescente o dele à lista e refaça o `make agent-install`.
 
 ## Migração do banco existente
 
