@@ -46,17 +46,19 @@ func (f *File) Write(p []byte) (int, error) {
 }
 
 func (f *File) rotate() error {
-	if err := f.file.Close(); err != nil {
-		return fmt.Errorf("closing the log file before rotating: %w", err)
-	}
-	if err := os.Rename(f.path, f.path+".1"); err != nil {
-		return fmt.Errorf("rotating the log file: %w", err)
-	}
+	f.file.Close()
+	renameErr := os.Rename(f.path, f.path+".1")
+
 	handle, err := os.OpenFile(f.path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return fmt.Errorf("opening the log file after rotating: %w", err)
 	}
 	f.file = handle
+
+	if renameErr != nil {
+		f.max = 0
+		return fmt.Errorf("rotating the log file, which stays open and grows unrotated from here: %w", renameErr)
+	}
 	f.size = 0
 	return nil
 }

@@ -69,3 +69,33 @@ func TestWriteRotatesAndKeepsTheLineThatOverflowed(t *testing.T) {
 		t.Errorf("the rotated file lost the earlier lines:\n%s", rotated)
 	}
 }
+
+func TestWriteKeepsWorkingAfterARotationThatFailed(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hunter.log")
+	f, err := Open(path, 32)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer f.Close()
+	if err := os.Mkdir(path+".1", 0o755); err != nil {
+		t.Fatalf("blocking the rotation target: %v", err)
+	}
+
+	if _, err := f.Write([]byte(strings.Repeat("a", 30) + "\n")); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if _, err := f.Write([]byte("the line that could not rotate\n")); err == nil {
+		t.Error("a rotation that failed was not reported to the caller")
+	}
+
+	if _, err := f.Write([]byte("the round after the failed rotation\n")); err != nil {
+		t.Fatalf("the log stopped taking writes after a failed rotation: %v", err)
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "the round after the failed rotation") {
+		t.Errorf("the log lost every round after a failed rotation:\n%s", body)
+	}
+}
