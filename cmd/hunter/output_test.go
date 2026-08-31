@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -121,5 +122,49 @@ func TestDrainKeepsTheTerminalFedWhenTheLogFileFails(t *testing.T) {
 				t.Errorf("the report does not say why the log file failed: %q", complaints.String())
 			}
 		})
+	}
+}
+
+func TestTeeOutputCarriesTheLogPackageAndHandsItBack(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "logs", "hunter.log")
+
+	reader, terminal, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	originalOut, originalErr, originalLog := os.Stdout, os.Stderr, log.Writer()
+	os.Stdout, os.Stderr = terminal, terminal
+	log.SetOutput(io.Discard)
+	t.Cleanup(func() {
+		os.Stdout, os.Stderr = originalOut, originalErr
+		log.SetOutput(originalLog)
+	})
+
+	stop, err := teeOutput(path)
+	if err != nil {
+		t.Fatalf("teeOutput: %v", err)
+	}
+	log.Printf("web: reading fipe references: %v", errors.New("database is locked"))
+	stop()
+
+	if log.Writer() != terminal {
+		t.Error("teeOutput left the log package writing somewhere other than the real stderr")
+	}
+	terminal.Close()
+
+	shown, err := io.ReadAll(reader)
+	if err != nil {
+		t.Fatalf("reading the terminal: %v", err)
+	}
+	logged, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("reading the log: %v", err)
+	}
+	const want = "web: reading fipe references: database is locked"
+	if !strings.Contains(string(logged), want) {
+		t.Errorf("hunter.log missed what the log package printed, got %q", logged)
+	}
+	if !strings.Contains(string(shown), want) {
+		t.Errorf("the terminal missed what the log package printed, got %q", shown)
 	}
 }

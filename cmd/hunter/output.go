@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"log"
 	"os"
 
 	"github.com/andreabreu76/harley-hunter/internal/logging"
@@ -25,6 +26,7 @@ func teeOutput(path string) (func(), error) {
 
 	terminalOut, terminalErr := os.Stdout, os.Stderr
 	os.Stdout, os.Stderr = writer, writer
+	log.SetOutput(writer)
 
 	drained := make(chan struct{})
 	go func() {
@@ -34,6 +36,7 @@ func teeOutput(path string) (func(), error) {
 
 	return func() {
 		os.Stdout, os.Stderr = terminalOut, terminalErr
+		log.SetOutput(terminalErr)
 		writer.Close()
 		<-drained
 		file.Close()
