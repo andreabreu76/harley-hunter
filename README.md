@@ -1,15 +1,43 @@
 # harley-hunter
 
-Robô que vigia anúncios de Harley-Davidson Street Glide e Road Glide na OLX e no
-Mercado Livre, guarda o que encontra em SQLite e avisa por notificação nativa do
-macOS quando aparece um anúncio dentro do alvo. O clique no banner abre o anúncio
-no navegador.
+Robô que vigia anúncios de Harley-Davidson Street Glide e Road Glide em seis
+marketplaces brasileiros, guarda o que encontra num SQLite e avisa por
+notificação da área de trabalho quando aparece um anúncio dentro do alvo. Roda
+em macOS, Linux e Windows.
+
+## Como funciona
+
+A cada rodada o hunter abre as URLs de busca configuradas para cada fonte, lê os
+anúncios, normaliza o que veio (preço em centavos, ano, quilometragem, cidade) e
+classifica cada um em três baldes, segundo os critérios do config:
+
+- **match** — ano e preço dentro do alvo;
+- **maybe** — ano ou preço na faixa de tolerância;
+- **rejeitado** — fora, ou nem é a moto certa.
+
+Anúncio novo em match, e queda de preço abaixo do menor valor já comunicado,
+viram notificação na área de trabalho. Anúncio que some das buscas é marcado como
+encerrado. Reanúncios da mesma moto são agrupados por um fingerprint grosseiro
+(moto, ano, faixa de quilometragem, cidade), para que a mesma máquina reanunciada
+não avise duas vezes.
+
+Cinco das seis fontes bloqueiam HTTP puro e são lidas por um navegador de
+verdade, controlado por CDP. O hunter encontra, sobe e derruba esse navegador
+sozinho — veja [O navegador](#o-navegador).
 
 ## Pré-requisitos
 
-- Go 1.26+
-- Google Chrome instalado (OLX, Mercado Livre e Webmotors bloqueiam HTTP puro e são lidas por CDP; a Mobiauto não precisa dele)
-- `terminal-notifier` (`brew install terminal-notifier`), necessário para o clique no banner abrir o anúncio
+- **Go 1.26+** para compilar. O SQLite é implementação pura em Go: não precisa de
+  cgo nem de toolchain C, e é por isso que o `make cross` compila para os três
+  sistemas a partir de qualquer um deles.
+- **Google Chrome, Chromium ou Microsoft Edge** instalado. Sem nenhum dos três, a
+  rodada falha dizendo exatamente isso.
+- Notificação, conforme o sistema:
+  - **macOS** — `terminal-notifier` (`brew install terminal-notifier`). Sem ele o
+    alerta cai no `osascript` e o clique no banner deixa de abrir o anúncio.
+  - **Linux** — `notify-send` (`libnotify-bin` no Debian e Ubuntu, `libnotify` no
+    Fedora e Arch). Sem ele o alerta falha e fica pendente para a próxima rodada.
+  - **Windows** — nada a instalar; o toast sai por PowerShell.
 
 ## Instalação
 
@@ -17,103 +45,302 @@ no navegador.
 go build -o ~/bin/hunter ./cmd/hunter
 ```
 
+ou `make build`, que faz o mesmo. Para gerar os binários dos três sistemas em
+`dist/`:
+
+```bash
+make cross
+```
+
+## Onde ficam os arquivos
+
+Nada mais mora no diretório do repositório. Config, banco, perfil do navegador e
+log vivem num diretório por usuário:
+
+| Sistema | Diretório |
+|---|---|
+| macOS | `~/Library/Application Support/harley-hunter` |
+| Linux | `$XDG_DATA_HOME/harley-hunter`, ou `~/.local/share/harley-hunter` |
+| Windows | `%LOCALAPPDATA%\harley-hunter` |
+
+Dentro dele: `config.yaml`, `hunter.db`, `chrome-profile/` e `logs/hunter.log`.
+
+Não é preciso decorar nada disso — o comando `paths` imprime os cinco caminhos:
+
+```bash
+hunter paths
+```
+
+```
+directory: /Users/andreabreu/Library/Application Support/harley-hunter
+config:    /Users/andreabreu/Library/Application Support/harley-hunter/config.yaml
+database:  /Users/andreabreu/Library/Application Support/harley-hunter/hunter.db
+profile:   /Users/andreabreu/Library/Application Support/harley-hunter/chrome-profile
+log:       /Users/andreabreu/Library/Application Support/harley-hunter/logs/hunter.log
+```
+
+Na primeira execução de qualquer comando, se ainda não houver `config.yaml`, o
+hunter escreve um esqueleto ali — com as seis fontes listadas, sem URLs e sem
+critérios. Um config incompleto assim não derruba o daemon: ele sobe, serve o
+dashboard e não coleta, até o arquivo ganhar URLs, anos e preço máximo.
+
+Dois desvios possíveis:
+
+- `HARLEY_HUNTER_HOME=/outro/lugar` troca o diretório inteiro, em qualquer
+  sistema. Serve para testar sem encostar na instalação de verdade.
+- `hunter -config /caminho/config.yaml <comando>` aponta para um config fora do
+  diretório. O banco então segue o `database_path` daquele arquivo — que, quando
+  relativo, é resolvido a partir do diretório do próprio config, e não do
+  diretório onde o comando foi chamado.
+
 ## Uso
 
-Coleta uma rodada e dispara os alertas pendentes:
+### `serve` — o daemon
 
 ```bash
-deploy/hunter-crawl.sh
+hunter serve
 ```
 
-O script sobe, se ainda não estiver de pé, um Chrome dedicado na porta 9222 com
-perfil próprio em `~/Library/Application Support/harley-hunter-chrome`, fora da
-tela e sem `--headless` (o Cloudflare bloqueia headless). Ele deixa o navegador
-vivo entre as rodadas. Para chamar o binário direto, com o Chrome já rodando:
+Sobe e fica de pé. É ele quem agenda a própria coleta: a cada minuto olha quando
+a última rodada começou e, se já passou o intervalo, coleta. Não existe mais
+script de shell nem relógio do sistema operacional no caminho — quem manda é o
+`interval_hours` do config.
+
+Junto sobe o dashboard em <http://127.0.0.1:8080>, com as abas de match, maybe,
+rejeitados e a saúde de cada fonte, além das fontes ativas naquele momento.
+`Ctrl+C` encerra o daemon e o dashboard.
+
+O config é relido a quente. Mudar `interval_hours`, as fontes, as URLs ou a faixa
+de preço passa a valer na checagem seguinte, sem reiniciar. Se o arquivo for
+salvo quebrado, o daemon avisa no log e segue com a última versão boa.
+
+Enquanto o `serve` está no ar, tudo que ele imprime vai também para o arquivo de
+log.
+
+### `crawl` — uma rodada só
 
 ```bash
-~/bin/hunter -config config/config.yaml crawl
+hunter crawl
 ```
 
-Dashboard local, sob demanda — não entra no agendamento:
+Coleta uma vez e sai. Serve para testar o config ou forçar uma rodada fora de
+hora. Ao contrário do `serve`, imprime só no terminal.
 
-```bash
-~/bin/hunter -config config/config.yaml serve
-```
+Não rode o `crawl` com o daemon no ar: os dois disputam o mesmo perfil do Chrome.
 
-Sobe em <http://127.0.0.1:8080> com as abas de match, maybe, rejeitados e saúde
-das fontes. Encerra com Ctrl+C.
-
-Com o dashboard no ar, `GET /export.json` devolve o banco em JSON, para entregar
-a um agente. Traz match e maybe por padrão; `?verdict=match`, `?verdict=maybe` e
-`?verdict=all` estreitam ou ampliam o recorte. Cada anúncio vai com a referência
-FIPE e o gap em percentual, a queda desde o primeiro preço visto, o histórico
-completo e os reanúncios irmãos. O envelope leva ainda a contagem de todo o
-banco e a saúde de cada fonte. `make export` grava o arquivo, e `make export
-VERDICT=all` traz os descartados junto.
+### `repair-silenced`
 
 Devolve à fila de alerta os anúncios que o dedup antigo calou sem avisar:
 
 ```bash
-~/bin/hunter -config config/config.yaml repair-silenced
+hunter repair-silenced
 ```
 
 Ele lista os ids que vai liberar antes de gravar e, no fim, quantos voltaram para
-a fila. O próximo `crawl` avisa sobre eles, respeitando o teto de alertas por
-rodada.
+a fila. A próxima rodada avisa sobre eles, respeitando o teto de alertas.
 
 Rode **uma única vez**, num momento em que dê para acompanhar a fila — nunca no
 agendamento. O comando se rearma: depois que um anúncio liberado já foi avisado,
 rodar de novo o coloca outra vez na fila e gera alerta duplicado.
 
-## Agendamento
+### `export.json`
 
-A coleta roda sozinha a cada 2 horas por um agente do `launchd`.
+Com o dashboard no ar, `GET /export.json` devolve o banco em JSON, para entregar
+a um agente. Traz match e maybe por padrão; `?verdict=match`, `?verdict=maybe` e
+`?verdict=all` estreitam ou ampliam o recorte. Cada anúncio vai com a referência
+FIPE e o gap em percentual, a queda desde o primeiro preço visto, o histórico
+completo e os reanúncios irmãos. O envelope leva ainda a contagem de todo o banco
+e a saúde de cada fonte. `make export` grava o arquivo, e `make export VERDICT=all`
+traz os descartados junto.
 
-```bash
-cp deploy/com.andreabreu.harleyhunter.plist ~/Library/LaunchAgents/
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.andreabreu.harleyhunter.plist
-launchctl list | grep harleyhunter
+## Agendamento: `interval_hours`
+
+O intervalo entre rodadas é uma linha do config, e nada mais:
+
+```yaml
+crawl:
+  interval_hours: 12
 ```
 
-Para desligar:
+Ausente ou zero, o padrão é 12 horas. A contagem parte do início da última rodada
+gravada no banco, e não do momento em que o processo subiu: reiniciar o daemon
+não zera o relógio nem provoca uma coleta extra. Num banco que nunca rodou, a
+primeira coleta acontece na primeira checagem.
+
+Como o config é relido a quente, mudar o intervalo não exige reiniciar nada.
+
+## Autostart no macOS
+
+O agente do `launchd` deixou de ser o relógio. O plist não tem mais
+`StartInterval`: ele apenas sobe `hunter serve` no login e, com `KeepAlive`, o
+levanta de novo se o processo cair.
 
 ```bash
-launchctl bootout gui/$(id -u)/com.andreabreu.harleyhunter
+make agent-install    # compila, copia o plist e recarrega o agente
+make agent-status     # diz se o agente está carregado e se o dashboard responde
+make logs             # acompanha o log do daemon
+make agent-uninstall  # descarrega o agente
 ```
 
-Depois de editar o plist, é preciso copiar de novo para `~/Library/LaunchAgents`
-e refazer o par `bootout` + `bootstrap` — o `launchd` não relê o arquivo sozinho.
+Depois de editar o plist é preciso repetir o `make agent-install` — o `launchd`
+não relê o arquivo sozinho. Mudar o intervalo das rodadas, porém, não passa mais
+por aqui: é o `interval_hours` do config.
 
-## Logs
+O autostart equivalente para Linux (`systemd --user`) e Windows é da fase 9. Nos
+dois, por ora, o daemon sobe à mão com `hunter serve`.
 
-- `~/Library/Logs/harley-hunter.log` — resumo por fonte, contagem de novos matches e de alertas mostrados
-- `~/Library/Logs/harley-hunter.error.log` — erros; o ruído `unhandled node event` vem do chromedp e é inofensivo
+## O navegador
 
-Se o log de erro trouxer o aviso de que o `terminal-notifier` não foi encontrado
-no `PATH`, o alerta caiu no fallback de `osascript` e o clique no banner deixa de
-abrir o anúncio. A causa é o `PATH` mínimo que o `launchd` entrega; o
-`deploy/hunter-crawl.sh` corrige isso exportando `/opt/homebrew/bin` na primeira
-linha.
+Com `devtools_url` vazio no config — que é o caso normal —, o hunter cuida do
+navegador sozinho: procura Chrome, Chromium e Edge nos caminhos de instalação e
+no `PATH`, sobe uma instância com o perfil dedicado (`chrome-profile`, dentro do
+diretório do app) numa porta livre escolhida na hora, usa e derruba no fim da
+rodada. A janela nasce fora da tela; no Linux sem `DISPLAY` nem `WAYLAND_DISPLAY`
+ele entra em `--headless=new`.
+
+Com `devtools_url` preenchido, o sentido se inverte: significa "eu mesmo cuido do
+navegador". O hunter não sobe nem derruba nada — só confere se alguém responde
+naquele endereço e usa o que estiver lá. Se ninguém responder, ele falha e pede
+para limpar o campo. Use isso quando quiser um Chrome seu, aberto na tela, com a
+sessão logada à vista.
+
+O `config/config.yaml` versionado no repositório ainda traz
+`devtools_url: http://127.0.0.1:9222`, herança do script antigo. Quem copiar esse
+arquivo herda o modo de navegador externo; apague a linha para o hunter cuidar do
+navegador sozinho.
+
+## Instagram e Facebook Marketplace exigem sessão logada
+
+Estas duas fontes não devolvem nada para quem não está logado — e o jeito como
+elas não devolvem é o problema.
+
+**Elas não dão erro: elas emudecem.** Sem sessão, ou com a sessão expirada, o que
+volta é uma página que o parser lê sem reclamar e da qual não sai nenhum anúncio.
+A rodada termina em `ok` com zero itens — indistinguível de "não tinha nenhuma
+Harley à venda hoje". O painel de saúde marca uma fonte como `suspect` depois de
+duas rodadas vazias seguidas, mas só se ela já vinha trazendo volume; numa
+instalação nova, em que o Instagram nunca trouxe nada, ela fica em `ok` com zeros
+para sempre. Só quando a página devolvida é literalmente o formulário de login é
+que a fonte falha alto. Ou seja: se Instagram e Marketplace vivem em zero
+enquanto as outras fontes trazem anúncios, desconfie da sessão antes de
+desconfiar do mercado.
+
+A sessão mora no perfil dedicado do Chrome — aquele que o `hunter paths` mostra
+na linha `profile:`. Como é o mesmo perfil em toda rodada, basta logar uma vez: a
+sessão sobrevive a reinício do daemon e da máquina, e expira sozinha de tempos em
+tempos, quando é preciso logar de novo.
+
+### Como logar, nesta fase
+
+Nesta fase o login é feito à mão, abrindo o Chrome contra aquele perfil. Com o
+daemon parado, porque dois processos não compartilham o mesmo perfil:
+
+1. Pare o daemon (`Ctrl+C`, ou `make agent-uninstall` no macOS).
+2. Descubra o caminho do perfil com `hunter paths`, linha `profile:`.
+3. Abra o Chrome com ele, apontando o `--user-data-dir` para esse caminho:
+
+```bash
+# macOS
+"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" \
+  --user-data-dir="$HOME/Library/Application Support/harley-hunter/chrome-profile"
+
+# Linux
+google-chrome --user-data-dir="$HOME/.local/share/harley-hunter/chrome-profile"
+```
+
+```powershell
+# Windows
+& "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" `
+  --user-data-dir="$env:LOCALAPPDATA\harley-hunter\chrome-profile"
+```
+
+Nessa janela, entre em `instagram.com` e em `facebook.com` e logue até ver o feed
+de cada um. Depois feche a janela e suba o daemon de novo.
+
+A tela que faz esse login por botão, sem linha de comando, é da **fase 8**. Até
+lá é assim — não adianta procurar um botão que ainda não existe.
+
+Se o seu config usa `devtools_url`, a sessão que conta é a do navegador que você
+mantém no ar, não a do perfil dedicado: logue nele.
 
 ## Fontes e transporte
 
-| Fonte | Transporte | Depende do Chrome |
-|---|---|---|
-| olx | CDP (`BrowserFetcher`) | sim |
-| mercadolivre | CDP (`BrowserFetcher`) | sim |
-| webmotors | CDP (`BrowserFetcher`) — PerimeterX responde 403 a HTTP puro | sim |
-| mobiauto | HTTP puro (`HTTPFetcher`) | **não** |
+| Fonte | Transporte | Depende do navegador | Exige sessão logada |
+|---|---|---|---|
+| olx | CDP | sim | não |
+| mercadolivre | CDP | sim | não |
+| webmotors | CDP — o PerimeterX responde 403 a HTTP puro | sim | não |
+| mobiauto | HTTP puro | **não** | não |
+| instagram | CDP | sim | **sim** |
+| marketplace | CDP | sim | **sim** |
 
-A Mobiauto continua coletando com o Chrome fora do ar: ela fala HTTP direto, com
-o User-Agent de navegador e timeout próprio. Numa rodada em que o Chrome não
-sobe, as três primeiras fontes falham e a Mobiauto entrega normalmente — o painel
-de saúde mostra exatamente isso, fonte a fonte.
+A Mobiauto continua coletando com o navegador fora do ar: ela fala HTTP direto,
+com User-Agent de navegador e timeout próprio. Numa rodada em que o Chrome não
+sobe, as outras cinco falham e a Mobiauto entrega normalmente — e o painel de
+saúde mostra exatamente isso, fonte a fonte.
 
 Fonte que responde algo diferente de `200`, ou que devolve página de desafio no
 lugar do payload esperado, falha alto e vira erro da rodada; não passa em branco.
+A exceção conhecida são o Instagram e o Marketplace deslogados, descritos acima.
 
-## Fase 2
+## Logs
 
-O plano das próximas fontes (Webmotors, Mobiauto, Instagram e Facebook
-Marketplace), da marcação de reanúncio e da expiração de anúncios sumidos está em
-`docs/superpowers/plans/2026-08-09-harley-hunter-fase2.md`.
+O log do daemon é o `logs/hunter.log` dentro do diretório do app — resumo por
+fonte, contagem de novos matches, alertas mostrados e os erros da rodada. Ele
+rotaciona ao passar de 5 MB, guardando o anterior como `hunter.log.1`. Quem roda
+`hunter serve` no terminal vê o mesmo texto na tela; o `hunter crawl` só imprime
+no terminal, sem escrever no arquivo.
+
+No macOS, o agente do `launchd` manda o `stderr` do processo para
+`logs/launchd.error.log`, ao lado — é lá que caem as falhas anteriores à abertura
+do log, como um config ilegível ou um diretório sem permissão de escrita.
+
+Duas linhas que aparecem no log e merecem tradução:
+
+- `ERROR: unhandled node event ... dom.Event` é ruído do chromedp conversando com
+  o DevTools, não do nosso código.
+- O aviso de que o `terminal-notifier` não foi encontrado no `PATH` quer dizer que
+  o alerta caiu no `osascript` e o clique no banner deixou de abrir o anúncio.
+  Rodando `hunter serve` no terminal isso não acontece; sob o agente do `launchd`
+  acontece, porque o `PATH` entregue ao agente é o mínimo
+  (`/usr/bin:/bin:/usr/sbin:/sbin`), onde o Homebrew não está. A saída é declarar
+  o `PATH` no plist e refazer o `make agent-install`:
+
+```xml
+<key>EnvironmentVariables</key>
+<dict>
+    <key>PATH</key>
+    <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+</dict>
+```
+
+## Migração do banco existente
+
+Só vale para quem já rodava a versão anterior, com o banco na raiz do repositório.
+Com o agente parado, o banco e o config vão para o diretório novo:
+
+```bash
+launchctl bootout gui/$(id -u)/com.andreabreu.harleyhunter
+mkdir -p "$HOME/Library/Application Support/harley-hunter"
+cp hunter.db hunter.db-wal hunter.db-shm "$HOME/Library/Application Support/harley-hunter/"
+cp config/config.yaml "$HOME/Library/Application Support/harley-hunter/"
+make agent-install
+```
+
+São os **três** arquivos do banco, e não só o `.db`: o SQLite roda em modo WAL, e
+copiar apenas o primeiro descarta as transações que ainda não foram integradas —
+ou seja, joga fora o histórico recente de preços e de alertas já enviados, que é
+justamente o que impede o hunter de reavisar tudo de novo.
+
+Depois de copiar, no config novo:
+
+- apague a linha `database_path`, para que ele use o `hunter.db` ao lado;
+- apague também a linha `devtools_url`, a menos que você queira mesmo continuar
+  apontando para um Chrome que você sobe por conta própria.
+
+Confira o resultado com `hunter paths` antes de subir o agente.
+
+## Documentação
+
+As especificações e os planos de cada fase estão em
+`docs/superpowers/specs/` e `docs/superpowers/plans/`.

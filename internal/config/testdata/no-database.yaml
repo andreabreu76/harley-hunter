@@ -1,8 +1,0 @@
-sources:
-  - olx
-source_urls:
-  olx:
-    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr?q=harley%20street%20glide
-match:
-  years: [2014, 2015]
-  max_price_cents: 7500000
