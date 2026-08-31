@@ -1,6 +1,9 @@
 package notify
 
-import "context"
+import (
+	"context"
+	"runtime"
+)
 
 type Alert struct {
 	Message string
@@ -9,4 +12,17 @@ type Alert struct {
 
 type Notifier interface {
 	Send(ctx context.Context, alert Alert) error
+}
+
+func New() Notifier { return newFor(runtime.GOOS) }
+
+func newFor(goos string) Notifier {
+	switch goos {
+	case "darwin":
+		return NewMacOS()
+	case "windows":
+		return NewWindows()
+	default:
+		return NewLinux()
+	}
 }
