@@ -2,6 +2,7 @@ package notify
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -51,5 +52,58 @@ func TestWindowsPassesTheMessageThroughTheEnvironment(t *testing.T) {
 	}
 	if !carried {
 		t.Errorf("the message never reached the environment:\n%q", got.env)
+	}
+}
+
+func alertBodyIn(env []string) (string, bool) {
+	const prefix = "HUNTER_ALERT_BODY="
+	body, found := "", false
+	for _, pair := range env {
+		if strings.HasPrefix(pair, prefix) {
+			body, found = strings.TrimPrefix(pair, prefix), true
+		}
+	}
+	return body, found
+}
+
+func TestWindowsKeepsNonHTTPSURLsOutOfTheBody(t *testing.T) {
+	for _, url := range []string{
+		"javascript:alert(document.cookie)",
+		"file:///etc/passwd",
+		"http://olx.com.br/abc",
+		"data:text/html,<script>x</script>",
+	} {
+		var calls []recordedShell
+		n := NewWindows()
+		n.run = func(ctx context.Context, name string, env []string, args ...string) error {
+			calls = append(calls, recordedShell{name: name, env: env, args: args})
+			return nil
+		}
+
+		if err := n.Send(context.Background(), Alert{Message: "teste", URL: url}); err != nil {
+			t.Fatalf("Send: %v", err)
+		}
+		body, found := alertBodyIn(calls[0].env)
+		if !found {
+			t.Fatalf("url %q: no HUNTER_ALERT_BODY in the environment", url)
+		}
+		if body != "teste" {
+			t.Errorf("url %q reached the body as %q, want the message alone: the toast turns the body into a clickable link", url, body)
+		}
+	}
+}
+
+func TestWindowsSendReportsRunnerFailure(t *testing.T) {
+	n := NewWindows()
+	n.run = func(ctx context.Context, name string, env []string, args ...string) error {
+		return errors.New("powershell.exe not found")
+	}
+
+	err := n.Send(context.Background(), Alert{Message: "teste"})
+	if err == nil {
+		t.Fatal("Send should surface a failure so crawl.Notify leaves the listing pending for the next round")
+	}
+	if !strings.Contains(err.Error(), "powershell.exe not found") {
+		t.Errorf("error %q loses the underlying cause", err)
 	}
 }
