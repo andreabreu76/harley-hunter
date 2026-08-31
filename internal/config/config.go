@@ -8,7 +8,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-const defaultDevtoolsURL = "http://127.0.0.1:9222"
+const defaultIntervalHours = 12
 
 type MatchCriteria struct {
 	Years              []int `yaml:"years"`
@@ -18,6 +18,7 @@ type MatchCriteria struct {
 }
 
 type CrawlSettings struct {
+	IntervalHours   int `yaml:"interval_hours"`
 	TimeoutSeconds  int `yaml:"timeout_seconds"`
 	MaxConcurrent   int `yaml:"max_concurrent"`
 	MaxAlertsPerRun int `yaml:"max_alerts_per_run"`
@@ -41,32 +42,39 @@ func Load(path string) (Config, error) {
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parsing config: %w", err)
 	}
-	if cfg.DatabasePath == "" {
-		return Config{}, fmt.Errorf("config has no database_path: sqlite would open a throwaway database and every round would re-notify the same listings")
+
+	dir, err := filepath.Abs(filepath.Dir(path))
+	if err != nil {
+		return Config{}, fmt.Errorf("resolving the config directory: %w", err)
 	}
-	if !filepath.IsAbs(cfg.DatabasePath) {
-		dir, err := filepath.Abs(filepath.Dir(path))
-		if err != nil {
-			return Config{}, fmt.Errorf("resolving database_path against the config directory: %w", err)
-		}
+	if cfg.DatabasePath == "" {
+		cfg.DatabasePath = filepath.Join(dir, "hunter.db")
+	} else if !filepath.IsAbs(cfg.DatabasePath) {
 		cfg.DatabasePath = filepath.Join(dir, cfg.DatabasePath)
 	}
+	if cfg.Crawl.IntervalHours <= 0 {
+		cfg.Crawl.IntervalHours = defaultIntervalHours
+	}
+	return cfg, nil
+}
+
+func Validate(cfg Config) error {
+	if cfg.DatabasePath == "" {
+		return fmt.Errorf("config has no database_path: sqlite would open a throwaway database and every round would re-notify the same listings")
+	}
 	if len(cfg.Sources) == 0 {
-		return Config{}, fmt.Errorf("config has no sources enabled")
+		return fmt.Errorf("config has no sources enabled")
 	}
 	if len(cfg.Match.Years) == 0 {
-		return Config{}, fmt.Errorf("config has no target years")
+		return fmt.Errorf("config has no target year")
 	}
 	if cfg.Match.MaxPriceCents <= 0 {
-		return Config{}, fmt.Errorf("config has no max price")
+		return fmt.Errorf("config has no max price")
 	}
 	for _, name := range cfg.Sources {
 		if len(cfg.SourceURLs[name]) == 0 {
-			return Config{}, fmt.Errorf("source %q is enabled but has no urls under source_urls", name)
+			return fmt.Errorf("source %q is enabled but has no urls under source_urls", name)
 		}
 	}
-	if cfg.DevtoolsURL == "" {
-		cfg.DevtoolsURL = defaultDevtoolsURL
-	}
-	return cfg, nil
+	return nil
 }
