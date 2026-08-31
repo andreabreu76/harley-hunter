@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -127,8 +128,16 @@ func runServe(configPath, dir string) error {
 	}()
 
 	fmt.Printf("config:    %s\n", watcher.Path())
-	fmt.Printf("dashboard: http://%s\n", dashboardAddr)
-	serveErr := srv.ListenAndServe()
+
+	var serveErr error
+	listener, err := net.Listen("tcp", dashboardAddr)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "the dashboard has no address to answer on and stays down, the hunt goes on without it: %v\n", err)
+		<-ctx.Done()
+	} else {
+		fmt.Printf("dashboard: http://%s\n", dashboardAddr)
+		serveErr = srv.Serve(listener)
+	}
 
 	stop()
 	<-closed

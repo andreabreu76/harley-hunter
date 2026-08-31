@@ -113,6 +113,10 @@ Junto sobe o dashboard em <http://127.0.0.1:8080>, com as abas de match, maybe,
 rejeitados e a saúde de cada fonte, além das fontes ativas naquele momento.
 `Ctrl+C` encerra o daemon e o dashboard.
 
+Se a porta 8080 já estiver ocupada, o dashboard fica fora do ar, o daemon diz
+isso no log e continua caçando: o painel é conveniência, e a coleta não para por
+causa dele.
+
 O config é relido a quente. Mudar `interval_hours`, as fontes, as URLs ou a faixa
 de preço passa a valer na checagem seguinte, sem reiniciar. Se o arquivo for
 salvo quebrado, o daemon avisa no log e segue com a última versão boa.
