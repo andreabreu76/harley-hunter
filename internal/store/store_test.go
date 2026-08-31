@@ -716,3 +716,38 @@ func TestPriceHistoryForWithoutIDsReturnsEmptyMap(t *testing.T) {
 		t.Errorf("expected an empty map, got %v", history)
 	}
 }
+
+func TestLastRunStartedAtIsEmptyBeforeTheFirstRound(t *testing.T) {
+	s := openTemp(t)
+	at, ever, err := s.LastRunStartedAt()
+	if err != nil {
+		t.Fatalf("LastRunStartedAt: %v", err)
+	}
+	if ever {
+		t.Errorf("a fresh database reported a previous round at %s", at)
+	}
+}
+
+func TestLastRunStartedAtTakesTheLatestAcrossSourcesAndStatuses(t *testing.T) {
+	s := openTemp(t)
+	old := time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+	recent := time.Date(2026, 8, 31, 7, 30, 0, 0, time.UTC)
+
+	if err := s.RecordRun("olx", old, old.Add(time.Minute), 12, "ok", ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RecordRun("instagram", recent, recent.Add(time.Minute), 0, "error", "blocked"); err != nil {
+		t.Fatal(err)
+	}
+
+	at, ever, err := s.LastRunStartedAt()
+	if err != nil {
+		t.Fatalf("LastRunStartedAt: %v", err)
+	}
+	if !ever {
+		t.Fatal("LastRunStartedAt found no round after two were recorded")
+	}
+	if !at.Equal(recent) {
+		t.Errorf("LastRunStartedAt = %s, want the failed round at %s", at, recent)
+	}
+}
