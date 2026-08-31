@@ -99,7 +99,7 @@ func runServe(cfg config.Config) error {
 
 	addr := "127.0.0.1:8080"
 	fmt.Printf("dashboard: http://%s\n", addr)
-	return http.ListenAndServe(addr, web.NewServer(db, cfg.Sources))
+	return http.ListenAndServe(addr, web.NewServer(db, func() []string { return cfg.Sources }))
 }
 
 func runRepairSilenced(cfg config.Config) error {

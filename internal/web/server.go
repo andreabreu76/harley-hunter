@@ -46,7 +46,7 @@ const (
 
 type server struct {
 	store      *store.Store
-	sources    []string
+	sources    func() []string
 	listTmpl   *template.Template
 	detailTmpl *template.Template
 	healthTmpl *template.Template
@@ -100,7 +100,7 @@ type listView struct {
 	empty   string
 }
 
-func NewServer(s *store.Store, sources []string) http.Handler {
+func NewServer(s *store.Store, sources func() []string) http.Handler {
 	funcs := template.FuncMap{
 		"money":      func(cents *int64) string { return format.Thousands(*cents / 100) },
 		"moneyCents": func(cents int64) string { return format.Thousands(cents / 100) },
@@ -357,8 +357,9 @@ func (s *server) setState(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
-	items := make([]sourceHealth, 0, len(s.sources))
-	for _, name := range s.sources {
+	names := s.sources()
+	items := make([]sourceHealth, 0, len(names))
+	for _, name := range names {
 		counts, err := s.store.RecentRunCounts(name, healthHistoryRuns)
 		if err != nil {
 			fail(w, http.StatusInternalServerError, err)
@@ -390,8 +391,9 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) lights() []sourceLight {
-	lights := make([]sourceLight, 0, len(s.sources))
-	for _, name := range s.sources {
+	names := s.sources()
+	lights := make([]sourceLight, 0, len(names))
+	for _, name := range names {
 		counts, err := s.store.RecentRunCounts(name, healthHistoryRuns)
 		if err != nil {
 			log.Printf("web: reading run history for %s: %v", name, err)

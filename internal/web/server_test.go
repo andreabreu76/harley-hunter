@@ -68,6 +68,10 @@ func upsert(t *testing.T, s *store.Store, l model.Listing, at time.Time) int64 {
 	return res.ID
 }
 
+func fixed(names ...string) func() []string {
+	return func() []string { return names }
+}
+
 func get(t *testing.T, srv http.Handler, path string) (int, string) {
 	t.Helper()
 	rec := httptest.NewRecorder()
@@ -144,7 +148,7 @@ func stripLights(t *testing.T, body string) []stripLight {
 }
 
 func TestRoutesRenderExpectedListings(t *testing.T) {
-	srv := NewServer(seededStore(t), []string{"olx"})
+	srv := NewServer(seededStore(t), fixed("olx"))
 
 	cases := []struct {
 		path        string
@@ -174,7 +178,7 @@ func TestRoutesRenderExpectedListings(t *testing.T) {
 }
 
 func TestHealthRouteRenders(t *testing.T) {
-	srv := NewServer(seededStore(t), []string{"olx"})
+	srv := NewServer(seededStore(t), fixed("olx"))
 	rec := httptest.NewRecorder()
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/health", nil))
 
@@ -188,7 +192,7 @@ func TestHealthRouteRenders(t *testing.T) {
 
 func TestSetUserStateUpdatesRow(t *testing.T) {
 	s := seededStore(t)
-	srv := NewServer(s, []string{"olx"})
+	srv := NewServer(s, fixed("olx"))
 
 	rows, err := s.ListByVerdict(model.VerdictMatch)
 	if err != nil || len(rows) == 0 {
@@ -222,7 +226,7 @@ func TestRejectedRouteRenders(t *testing.T) {
 		Verdict: model.VerdictReject,
 	}, time.Now())
 
-	code, body := get(t, NewServer(s, []string{"olx"}), "/rejected")
+	code, body := get(t, NewServer(s, fixed("olx")), "/rejected")
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
 	}
@@ -254,7 +258,7 @@ func TestListGroupsRegionsInPriorityOrder(t *testing.T) {
 		}, base.Add(-l.age))
 	}
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	want := []string{
 		"Rio de Janeiro", "Glide Rio", "Glide Niteroi",
 		"São Paulo", "Glide Sao Paulo",
@@ -291,7 +295,7 @@ func TestRegionWithoutRowsStillShowsItIsWatched(t *testing.T) {
 		Verdict: model.VerdictMatch,
 	}, time.Now())
 
-	code, body := get(t, NewServer(s, []string{"olx"}), "/")
+	code, body := get(t, NewServer(s, fixed("olx")), "/")
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
 	}
@@ -316,14 +320,14 @@ func TestOtherRegionsGroupOnlyAppearsWhenUsed(t *testing.T) {
 		Title: "Street Glide", City: "sao paulo", State: "SP", Verdict: model.VerdictMatch,
 	}, time.Now())
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	if strings.Contains(body, "Outras regiões") {
 		t.Error("the fallback region should stay hidden when every listing is in a watched region")
 	}
 }
 
 func TestEmptyListShowsEveryWatchedRegion(t *testing.T) {
-	code, body := get(t, NewServer(emptyStore(t), []string{"olx"}), "/")
+	code, body := get(t, NewServer(emptyStore(t), fixed("olx")), "/")
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
 	}
@@ -344,7 +348,7 @@ func TestListRendersRowWithEveryOptionalFieldAbsent(t *testing.T) {
 		Title: "Stret glide excelente estado", City: "curitiba", Verdict: model.VerdictMatch,
 	}, time.Now())
 
-	code, body := get(t, NewServer(s, []string{"olx"}), "/")
+	code, body := get(t, NewServer(s, fixed("olx")), "/")
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
 	}
@@ -379,7 +383,7 @@ func TestListRendersStateWithoutCity(t *testing.T) {
 		Title: "Road Glide", State: "RJ", Verdict: model.VerdictMatch,
 	}, time.Now())
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	lines := metaLines(body)
 	if len(lines) == 0 {
 		t.Fatal("list should render a meta line")
@@ -397,7 +401,7 @@ func TestListFormatsKilometresAsNumerals(t *testing.T) {
 		Title: "Street Glide", Km: &km, City: "curitiba", State: "PR", Verdict: model.VerdictMatch,
 	}, time.Now())
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	lines := metaLines(body)
 	if len(lines) == 0 {
 		t.Fatal("list should render a meta line")
@@ -414,7 +418,7 @@ func TestTriagedRowShowsItsStateAndLosesTheNewMarker(t *testing.T) {
 		Title: "Street Glide", City: "curitiba", State: "PR", Verdict: model.VerdictMatch,
 	}, time.Now())
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	if !strings.Contains(body, `class="novo"`) {
 		t.Error("an untriaged listing should carry the new marker")
 	}
@@ -422,7 +426,7 @@ func TestTriagedRowShowsItsStateAndLosesTheNewMarker(t *testing.T) {
 	if err := s.SetUserState(id, "contacted"); err != nil {
 		t.Fatalf("SetUserState: %v", err)
 	}
-	_, body = get(t, NewServer(s, []string{"olx"}), "/")
+	_, body = get(t, NewServer(s, fixed("olx")), "/")
 	if strings.Contains(body, `class="novo"`) {
 		t.Error("a triaged listing should lose the new marker")
 	}
@@ -438,7 +442,7 @@ func TestListingImagesSurviveHotlinkProtection(t *testing.T) {
 		Title: "Street Glide", ImageURL: "https://img.olx.com.br/images/38/387646197932805.jpg",
 		City: "curitiba", State: "PR", Verdict: model.VerdictMatch,
 	}, time.Now())
-	srv := NewServer(s, []string{"olx"})
+	srv := NewServer(s, fixed("olx"))
 
 	for _, path := range []string{"/", "/listing/1"} {
 		_, body := get(t, srv, path)
@@ -469,7 +473,7 @@ func TestPriceDropTickerOnlyAfterARealDrop(t *testing.T) {
 	}
 	upsert(t, s, steady, base)
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/")
+	_, body := get(t, NewServer(s, fixed("olx")), "/")
 	if strings.Contains(body, "▼") {
 		t.Error("a listing seen at one price should not show a price drop")
 	}
@@ -482,7 +486,7 @@ func TestPriceDropTickerOnlyAfterARealDrop(t *testing.T) {
 	dropped.PriceCents = &lower
 	upsert(t, s, dropped, base.Add(24*time.Hour))
 
-	_, body = get(t, NewServer(s, []string{"olx"}), "/")
+	_, body = get(t, NewServer(s, fixed("olx")), "/")
 	if want := "▼ R$ 5.000 desde 01/08"; !strings.Contains(body, want) {
 		t.Errorf("a listing whose price fell should show %q, body:\n%s", want, body)
 	}
@@ -499,7 +503,7 @@ func TestDetailShowsPriceHistoryInLocalTime(t *testing.T) {
 		Verdict: model.VerdictMatch,
 	}, observed)
 
-	code, body := get(t, NewServer(s, []string{"olx"}), "/listing/"+strconv.FormatInt(id, 10))
+	code, body := get(t, NewServer(s, fixed("olx")), "/listing/"+strconv.FormatInt(id, 10))
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
 	}
@@ -521,7 +525,7 @@ func TestDetailWithoutPriceHistoryShowsEmptyState(t *testing.T) {
 		Title: "Street Glide", City: "curitiba", State: "PR", Verdict: model.VerdictMatch,
 	}, time.Now())
 
-	code, body := get(t, NewServer(s, []string{"olx"}), "/listing/"+strconv.FormatInt(id, 10))
+	code, body := get(t, NewServer(s, fixed("olx")), "/listing/"+strconv.FormatInt(id, 10))
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
 	}
@@ -534,7 +538,7 @@ func TestDetailWithoutPriceHistoryShowsEmptyState(t *testing.T) {
 }
 
 func TestDetailOfMissingListingIsNotFound(t *testing.T) {
-	code, body := get(t, NewServer(emptyStore(t), []string{"olx"}), "/listing/999")
+	code, body := get(t, NewServer(emptyStore(t), fixed("olx")), "/listing/999")
 	if code != http.StatusNotFound {
 		t.Errorf("status = %d, want 404", code)
 	}
@@ -544,7 +548,7 @@ func TestDetailOfMissingListingIsNotFound(t *testing.T) {
 }
 
 func TestDetailWithUnparsableIDIsBadRequest(t *testing.T) {
-	code, body := get(t, NewServer(emptyStore(t), []string{"olx"}), "/listing/abc")
+	code, body := get(t, NewServer(emptyStore(t), fixed("olx")), "/listing/abc")
 	if code != http.StatusBadRequest {
 		t.Errorf("status = %d, want 400", code)
 	}
@@ -562,7 +566,7 @@ func TestSetUserStateRejectsUnknownValue(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	rec2 := httptest.NewRecorder()
-	srv := NewServer(s, []string{"olx"})
+	srv := NewServer(s, fixed("olx"))
 	srv.ServeHTTP(rec, httptest.NewRequest(http.MethodPost,
 		"/listing/"+strconv.FormatInt(rows[0].ID, 10)+"/state?value=sold", nil))
 	if rec.Code != http.StatusBadRequest {
@@ -582,7 +586,7 @@ func TestSetUserStateRejectsUnknownValue(t *testing.T) {
 }
 
 func TestHealthReportsSourceWithoutRuns(t *testing.T) {
-	code, body := get(t, NewServer(emptyStore(t), []string{"olx"}), "/health")
+	code, body := get(t, NewServer(emptyStore(t), fixed("olx")), "/health")
 	if code != http.StatusOK {
 		t.Fatalf("status = %d, want 200", code)
 	}
@@ -614,7 +618,7 @@ func TestHealthLooksBeyondTheSuspectWindow(t *testing.T) {
 		}
 	}
 
-	_, body := get(t, NewServer(s, []string{"olx"}), "/health")
+	_, body := get(t, NewServer(s, fixed("olx")), "/health")
 	row := healthRow(t, body, "olx")
 	if row.status != "suspect" {
 		t.Errorf("status = %q, want suspect: a source empty for five runs after a productive history is broken", row.status)
@@ -630,7 +634,7 @@ func TestHealthStripAppearsOnEveryPageWithLastCollection(t *testing.T) {
 	if err := s.RecordRun("olx", at, at, 268, "ok", ""); err != nil {
 		t.Fatalf("RecordRun: %v", err)
 	}
-	srv := NewServer(s, []string{"olx", "mercadolivre"})
+	srv := NewServer(s, fixed("olx", "mercadolivre"))
 
 	for _, path := range []string{"/", "/maybe", "/rejected", "/health"} {
 		_, body := get(t, srv, path)
@@ -673,7 +677,7 @@ func TestHumanSince(t *testing.T) {
 }
 
 func TestActiveTabIsMarked(t *testing.T) {
-	srv := NewServer(seededStore(t), []string{"olx"})
+	srv := NewServer(seededStore(t), fixed("olx"))
 	cases := map[string]string{"/": "Match", "/maybe": "Talvez", "/rejected": "Descartados", "/health": "Saúde"}
 	for path, label := range cases {
 		_, body := get(t, srv, path)
@@ -700,7 +704,7 @@ func TestCardShowsThePhoneAsADialableLink(t *testing.T) {
 	}, time.Now())
 
 	for _, path := range []string{"/", "/listing/1"} {
-		code, raw := get(t, NewServer(s, nil), path)
+		code, raw := get(t, NewServer(s, fixed()), path)
 		if code != http.StatusOK {
 			t.Fatalf("GET %s = %d", path, code)
 		}
@@ -716,7 +720,7 @@ func TestCardShowsThePhoneAsADialableLink(t *testing.T) {
 
 func TestCardWithoutAPhoneShowsNoContactLink(t *testing.T) {
 	s := seededStore(t)
-	code, body := get(t, NewServer(s, nil), "/")
+	code, body := get(t, NewServer(s, fixed()), "/")
 	if code != http.StatusOK {
 		t.Fatalf("GET / = %d", code)
 	}
@@ -749,7 +753,7 @@ func TestCardShowsHowOldTheAdIsWhenTheSourcePublishedADate(t *testing.T) {
 	published := time.Now().Add(-12 * 24 * time.Hour)
 	upsert(t, s, agedListing("a1", &published), time.Now().Add(-3*24*time.Hour))
 
-	code, body := get(t, NewServer(s, nil), "/")
+	code, body := get(t, NewServer(s, fixed()), "/")
 	if code != http.StatusOK {
 		t.Fatalf("GET / = %d", code)
 	}
@@ -762,7 +766,7 @@ func TestCardSaysWhenItOnlyKnowsTheDayItFoundTheAd(t *testing.T) {
 	s := emptyStore(t)
 	upsert(t, s, agedListing("a2", nil), time.Now().Add(-3*24*time.Hour))
 
-	code, body := get(t, NewServer(s, nil), "/")
+	code, body := get(t, NewServer(s, fixed()), "/")
 	if code != http.StatusOK {
 		t.Fatalf("GET / = %d", code)
 	}
@@ -777,7 +781,7 @@ func TestDetailShowsBothDatesWhenTheSourcePublishedOne(t *testing.T) {
 	published := time.Date(2026, 8, 4, 12, 49, 53, 0, time.UTC)
 	id := upsert(t, s, agedListing("a3", &published), time.Date(2026, 8, 9, 22, 5, 0, 0, time.UTC))
 
-	code, body := get(t, NewServer(s, nil), "/listing/"+strconv.FormatInt(id, 10))
+	code, body := get(t, NewServer(s, fixed()), "/listing/"+strconv.FormatInt(id, 10))
 	if code != http.StatusOK {
 		t.Fatalf("GET detail = %d", code)
 	}
@@ -795,7 +799,7 @@ func TestDetailShowsOnlyTheRadarDateWhenTheSourcePublishedNone(t *testing.T) {
 	s := emptyStore(t)
 	id := upsert(t, s, agedListing("a4", nil), time.Date(2026, 8, 9, 22, 5, 0, 0, time.UTC))
 
-	code, body := get(t, NewServer(s, nil), "/listing/"+strconv.FormatInt(id, 10))
+	code, body := get(t, NewServer(s, fixed()), "/listing/"+strconv.FormatInt(id, 10))
 	if code != http.StatusOK {
 		t.Fatalf("GET detail = %d", code)
 	}
@@ -852,7 +856,7 @@ func TestCardShowsTheFipeReferenceAndTheGapBelowIt(t *testing.T) {
 	fipeSeed(t, s)
 	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6200000), time.Now())
 
-	code, body := get(t, NewServer(s, nil), "/")
+	code, body := get(t, NewServer(s, fixed()), "/")
 	if code != http.StatusOK {
 		t.Fatalf("GET / = %d", code)
 	}
@@ -873,7 +877,7 @@ func TestFipeGapInTheOwnersFavourGetsTheAccent(t *testing.T) {
 	fipeSeed(t, s)
 	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6200000), time.Now())
 
-	_, body := get(t, NewServer(s, nil), "/")
+	_, body := get(t, NewServer(s, fixed()), "/")
 	if !strings.Contains(body, `class="fipe barganha"`) {
 		t.Errorf("a listing 10%% under fipe did not get the accent, body:\n%s", body)
 	}
@@ -884,7 +888,7 @@ func TestFipeGapTooSmallToMatterStaysQuiet(t *testing.T) {
 	fipeSeed(t, s)
 	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6800000), time.Now())
 
-	_, body := get(t, NewServer(s, nil), "/")
+	_, body := get(t, NewServer(s, fixed()), "/")
 	if strings.Contains(body, `class="fipe barganha"`) {
 		t.Error("a listing barely under fipe got the accent, want it only from 5% down")
 	}
@@ -898,7 +902,7 @@ func TestFipeAboveReferenceIsStatedWithoutAccent(t *testing.T) {
 	fipeSeed(t, s)
 	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 7500000), time.Now())
 
-	_, body := get(t, NewServer(s, nil), "/")
+	_, body := get(t, NewServer(s, fixed()), "/")
 	if strings.Contains(body, `class="fipe barganha"`) {
 		t.Error("a listing above fipe got the buyer accent")
 	}
@@ -914,7 +918,7 @@ func TestFipeSaysWhenTheTrimIsAGuess(t *testing.T) {
 	electra.Verdict = model.VerdictMaybe
 	upsert(t, s, electra, time.Now())
 
-	_, body := get(t, NewServer(s, nil), "/maybe")
+	_, body := get(t, NewServer(s, fixed()), "/maybe")
 	got := fipeLines(body)
 	if len(got) != 1 || !strings.Contains(got[0], "FIPE (FLHTK 2014 base)") {
 		t.Errorf("fipe lines = %v, want the base-model label", got)
@@ -926,7 +930,7 @@ func TestNoFipeLineWhenNothingResolves(t *testing.T) {
 	fipeSeed(t, s)
 	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2015, 6200000), time.Now())
 
-	_, body := get(t, NewServer(s, nil), "/")
+	_, body := get(t, NewServer(s, fixed()), "/")
 	if strings.Contains(body, "FIPE") {
 		t.Error("a year fipe does not publish still rendered a reference")
 	}
@@ -942,7 +946,7 @@ func TestFipeWithoutAnAskingPriceShowsTheReferenceAlone(t *testing.T) {
 		Year: &year, City: "curitiba", State: "PR", Verdict: model.VerdictMatch,
 	}, time.Now())
 
-	_, body := get(t, NewServer(s, nil), "/")
+	_, body := get(t, NewServer(s, fixed()), "/")
 	got := fipeLines(body)
 	if len(got) != 1 || !strings.Contains(got[0], "FIPE (FLHX 2014): R$ 69.207") {
 		t.Errorf("fipe lines = %v, want the reference alone", got)
@@ -976,5 +980,21 @@ func TestPhoneLinkHelperRefusesAnythingButADialableNumber(t *testing.T) {
 		if got := phoneLink(&digits); got != "" {
 			t.Errorf("phoneLink(%q) = %q, want empty: only a real number reaches the tel: sink", bogus, got)
 		}
+	}
+}
+
+func TestHealthFollowsTheEnabledSourcesWithoutARestart(t *testing.T) {
+	s := emptyStore(t)
+	enabled := []string{"olx"}
+	srv := NewServer(s, func() []string { return enabled })
+
+	if _, body := get(t, srv, "/health"); strings.Contains(body, "webmotors") {
+		t.Fatal("health listed a source that was not enabled")
+	}
+
+	enabled = []string{"olx", "webmotors"}
+	_, body := get(t, srv, "/health")
+	if !strings.Contains(body, "webmotors") {
+		t.Errorf("health did not pick up the source enabled after boot:\n%s", body)
 	}
 }

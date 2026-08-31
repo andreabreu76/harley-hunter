@@ -148,8 +148,9 @@ func buildExport(in exportInput) exportEnvelope {
 }
 
 func (s *server) exportSources() ([]exportSource, error) {
-	sources := make([]exportSource, 0, len(s.sources))
-	for _, name := range s.sources {
+	names := s.sources()
+	sources := make([]exportSource, 0, len(names))
+	for _, name := range names {
 		counts, err := s.store.RecentRunCounts(name, healthHistoryRuns)
 		if err != nil {
 			return nil, err
