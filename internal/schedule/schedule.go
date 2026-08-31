@@ -26,6 +26,7 @@ type Runner struct {
 	Tick        time.Duration
 	Warn        io.Writer
 	lastAttempt time.Time
+	lastReason  string
 }
 
 func (r *Runner) Run(ctx context.Context) error {
@@ -52,8 +53,10 @@ func (r *Runner) Run(ctx context.Context) error {
 func (r *Runner) step() {
 	cfg := r.Config.Current()
 	if err := config.Validate(cfg); err != nil {
+		r.reportNotCollecting(fmt.Sprintf("not collecting: %v; edit %s", err, r.Config.Path()))
 		return
 	}
+	r.reportNotCollecting("")
 
 	now := r.Now()
 	lastRun, everRan, err := r.LastRun()
@@ -73,5 +76,15 @@ func (r *Runner) step() {
 	r.lastAttempt = now
 	if err := r.Collect(cfg); err != nil {
 		fmt.Fprintf(r.Warn, "round failed: %v\n", err)
+	}
+}
+
+func (r *Runner) reportNotCollecting(reason string) {
+	if reason == r.lastReason {
+		return
+	}
+	r.lastReason = reason
+	if reason != "" {
+		fmt.Fprintln(r.Warn, reason)
 	}
 }

@@ -82,7 +82,10 @@ log:       /Users/andreabreu/Library/Application Support/harley-hunter/logs/hunt
 Na primeira execução de qualquer comando, se ainda não houver `config.yaml`, o
 hunter escreve um esqueleto ali — com as seis fontes listadas, sem URLs e sem
 critérios. Um config incompleto assim não derruba o daemon: ele sobe, serve o
-dashboard e não coleta, até o arquivo ganhar URLs, anos e preço máximo.
+dashboard e não coleta, registrando no log o que falta, até o arquivo ganhar
+URLs, anos e preço máximo. Se o config quebrar depois, com o daemon já
+coletando, é essa mesma linha que conta o que aconteceu — uma vez, e de novo só
+quando o motivo mudar.
 
 Dois desvios possíveis:
 

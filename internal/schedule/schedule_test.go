@@ -1,11 +1,13 @@
 package schedule
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -90,7 +92,7 @@ func TestRunnerCollectsWhenTheIntervalHasPassed(t *testing.T) {
 	}
 }
 
-func TestRunnerStaysQuietWhileTheConfigCannotCollect(t *testing.T) {
+func TestRunnerDoesNotCollectWhileTheConfigIsIncomplete(t *testing.T) {
 	collected := 0
 	r := &Runner{
 		Config:  watcherFor(t, "sources:\n  - olx\n"),
@@ -160,5 +162,50 @@ func TestRunnerDoesNotOverlapRounds(t *testing.T) {
 	runOnce(t, r)
 	if overlapped {
 		t.Error("two rounds ran at the same time")
+	}
+}
+
+func TestRunnerSaysWhyItIsNotCollectingOncePerReason(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.yaml")
+	if err := os.WriteFile(path, []byte("sources:\n  - olx\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	watcher, err := config.NewWatcher(path)
+	if err != nil {
+		t.Fatalf("NewWatcher: %v", err)
+	}
+	var warned bytes.Buffer
+	r := &Runner{
+		Config:  watcher,
+		LastRun: func() (time.Time, bool, error) { return time.Time{}, false, nil },
+		Collect: func(config.Config) error { t.Error("collected with a config that cannot collect"); return nil },
+		Now:     time.Now,
+		Warn:    &warned,
+	}
+
+	r.step()
+	r.step()
+	r.step()
+	if got := strings.Count(warned.String(), "\n"); got != 1 {
+		t.Errorf("three ticks with the same broken config wrote %d lines, want 1:\n%s", got, warned.String())
+	}
+	if !strings.Contains(warned.String(), "no target year") {
+		t.Errorf("the log does not say what the config is missing:\n%s", warned.String())
+	}
+
+	if err := os.WriteFile(path, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	later := time.Now().Add(time.Second)
+	if err := os.Chtimes(path, later, later); err != nil {
+		t.Fatal(err)
+	}
+	r.step()
+	r.step()
+	if got := strings.Count(warned.String(), "\n"); got != 2 {
+		t.Errorf("a config truncated to nothing wrote %d lines in total, want 2:\n%s", got, warned.String())
+	}
+	if !strings.Contains(warned.String(), "no sources enabled") {
+		t.Errorf("the log does not say the config lost its sources:\n%s", warned.String())
 	}
 }
