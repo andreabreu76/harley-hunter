@@ -204,3 +204,16 @@ func TestDetectBikeTreatsABareNameAsItsOwnTitle(t *testing.T) {
 		t.Errorf("DetectBike = %q/%q, want sportster_1200/forty_eight: a bare model name is a title", bike, variant)
 	}
 }
+
+func TestDetectBikeInPrefersTheTrimCodeOverAContradictingTitle(t *testing.T) {
+	title := "HARLEY-DAVIDSON SPORTSTER XL 883N IRON"
+	body := "Harley-Davidson 1200 Custom Xl1200c"
+
+	bike, variant := DetectBikeIn(title, title+" "+body)
+	if bike != model.BikeSportster1200 {
+		t.Errorf("bike = %q, want sportster_1200", bike)
+	}
+	if variant != model.VariantCustom {
+		t.Errorf("variant = %q, want custom: the XL1200C code outranks a trade name the typed title got wrong", variant)
+	}
+}

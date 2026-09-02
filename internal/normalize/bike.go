@@ -129,24 +129,43 @@ func inSportsterContext(t string) bool {
 }
 
 func detectVariant(t, compact, named string) string {
-	if v := variantIn(named, compactor.Replace(named)); v != model.VariantUnknown {
+	if v := variantFromCode(compact); v != model.VariantUnknown {
 		return v
 	}
-	if v := variantIn(t, compact); v != model.VariantUnknown {
+	if v := variantFromName(named); v != model.VariantUnknown {
+		return v
+	}
+	if v := variantFromName(t); v != model.VariantUnknown {
 		return v
 	}
 	return model.VariantBase
 }
 
-func variantIn(t, compact string) string {
+func variantFromCode(compact string) string {
 	switch {
-	case containsCode(compact, "xl1200cx") || containsWord(t, "roadster"):
+	case containsCode(compact, "xl1200cx"):
 		return model.VariantRoadster
-	case containsCode(compact, "xl1200ns") || containsWord(t, "iron"):
+	case containsCode(compact, "xl1200ns"):
 		return model.VariantIron
-	case containsCode(compact, "xl1200x") || containsAny(t, compact, "forty eight", "fortyeight") || namesTheFortyEight(t):
+	case containsCode(compact, "xl1200x"):
 		return model.VariantFortyEight
-	case containsCode(compact, "xl1200c") || containsWord(t, "custom"):
+	case containsCode(compact, "xl1200c"):
+		return model.VariantCustom
+	default:
+		return model.VariantUnknown
+	}
+}
+
+func variantFromName(t string) string {
+	compact := compactor.Replace(t)
+	switch {
+	case containsWord(t, "roadster"):
+		return model.VariantRoadster
+	case containsWord(t, "iron"):
+		return model.VariantIron
+	case containsAny(t, compact, "forty eight", "fortyeight") || namesTheFortyEight(t):
+		return model.VariantFortyEight
+	case containsWord(t, "custom"):
 		return model.VariantCustom
 	default:
 		return model.VariantUnknown
