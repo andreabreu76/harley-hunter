@@ -96,8 +96,8 @@ func TestParseMercadoLivreFeedsYearAndKmToTheNormalizer(t *testing.T) {
 		if l.PriceCents == nil || *l.PriceCents != 5990000 {
 			t.Errorf("PriceCents = %v, want 5990000", l.PriceCents)
 		}
-		if l.Bike != model.BikeStreetGlide {
-			t.Errorf("Bike = %q, want %q", l.Bike, model.BikeStreetGlide)
+		if l.Bike != model.BikeOther {
+			t.Errorf("Bike = %q, want %q: the fixture is a Touring and the radar now watches the Sportster", l.Bike, model.BikeOther)
 		}
 		if l.State != "SP" {
 			t.Errorf("State = %q, want SP", l.State)

@@ -17,8 +17,7 @@ const skeleton = `sources:
   - marketplace
 source_urls: {}
 match:
-  years: []
-  maybe_years: []
+  max_age_years: 0
   max_price_cents: 0
   maybe_max_price_cents: 0
 crawl:

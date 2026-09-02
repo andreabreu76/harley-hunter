@@ -198,7 +198,7 @@ func collect(ctx context.Context, cfg config.Config, db *store.Store, dir string
 		return err
 	}
 	printReport(cfg, handle.DevtoolsURL(), report, time.Since(started))
-	refreshFipe(db)
+	refreshFipe(db, cfg.Match.MinYear)
 	sendAlerts(cfg, db)
 	return nil
 }
@@ -217,8 +217,8 @@ func openBrowser(ctx context.Context, cfg config.Config, dir string) (*browser.H
 	return browser.Launch(ctx, opts)
 }
 
-func refreshFipe(db *store.Store) {
-	stored, err := fipe.Refresh(context.Background(), fipe.NewHTTPFetcher(), db, time.Now())
+func refreshFipe(db *store.Store, minYear int) {
+	stored, err := fipe.Refresh(context.Background(), fipe.NewHTTPFetcher(), db, time.Now(), minYear)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "fipe refresh failed: %v\n", err)
 		return

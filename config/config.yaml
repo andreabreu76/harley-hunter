@@ -7,47 +7,47 @@ sources:
   - marketplace
 source_urls:
   olx:
-    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20street%20glide
-    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20street%20glide
-    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20street%20glide
-    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20road%20glide
-    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20road%20glide
-    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20road%20glide
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20sportster
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20sportster
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20sportster
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20forty%20eight
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20forty%20eight
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20forty%20eight
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-pr/regiao-de-curitiba-e-paranagua?q=harley%20iron%201200
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-sp/sao-paulo-e-regiao?q=harley%20iron%201200
+    - https://www.olx.com.br/autos-e-pecas/motos/estado-rj/rio-de-janeiro-e-regiao?q=harley%20iron%201200
   mercadolivre:
-    - https://lista.mercadolivre.com.br/harley-davidson-street-glide
-    - https://lista.mercadolivre.com.br/harley-davidson-road-glide
+    - https://lista.mercadolivre.com.br/harley-davidson-sportster-1200
+    - https://lista.mercadolivre.com.br/harley-davidson-forty-eight
+    - https://lista.mercadolivre.com.br/harley-davidson-iron-1200
   webmotors:
-    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fpr%3Ftipoveiculo%3Dmotos%26estadocidade%3DParan%25C3%25A1%26marca1%3Dharley-davidson%26modelo1%3Dstreet-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
-    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fsp%3Ftipoveiculo%3Dmotos%26estadocidade%3DS%25C3%25A3o%2520Paulo%26marca1%3Dharley-davidson%26modelo1%3Dstreet-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
-    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Frj%3Ftipoveiculo%3Dmotos%26estadocidade%3DRio%2520de%2520Janeiro%26marca1%3Dharley-davidson%26modelo1%3Dstreet-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
-    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fpr%3Ftipoveiculo%3Dmotos%26estadocidade%3DParan%25C3%25A1%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
-    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fsp%3Ftipoveiculo%3Dmotos%26estadocidade%3DS%25C3%25A3o%2520Paulo%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
-    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Frj%3Ftipoveiculo%3Dmotos%26estadocidade%3DRio%2520de%2520Janeiro%26marca1%3Dharley-davidson%26modelo1%3Droad-glide%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fpr%3Ftipoveiculo%3Dmotos%26estadocidade%3DParan%25C3%25A1%26marca1%3Dharley-davidson%26modelo1%3Dsportster-1200%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Fsp%3Ftipoveiculo%3Dmotos%26estadocidade%3DS%25C3%25A3o%2520Paulo%26marca1%3Dharley-davidson%26modelo1%3Dsportster-1200%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
+    - "https://www.webmotors.com.br/api/search/bike?url=https:%2F%2Fwww.webmotors.com.br%2Fmotos%2Frj%3Ftipoveiculo%3Dmotos%26estadocidade%3DRio%2520de%2520Janeiro%26marca1%3Dharley-davidson%26modelo1%3Dsportster-1200%26page%3D1&displayPerPage=47&actualPage=1&showMenu=true&showCount=true&showBreadCrumb=true&order=1&mediaZeroKm=true"
   mobiauto:
-    - https://www.mobiauto.com.br/comprar/motos/pr/harley-davidson/street-glide
-    - https://www.mobiauto.com.br/comprar/motos/sp/harley-davidson/street-glide
-    - https://www.mobiauto.com.br/comprar/motos/rj/harley-davidson/street-glide
-    - https://www.mobiauto.com.br/comprar/motos/pr/harley-davidson/road-glide
-    - https://www.mobiauto.com.br/comprar/motos/sp/harley-davidson/road-glide
-    - https://www.mobiauto.com.br/comprar/motos/rj/harley-davidson/road-glide
+    - https://www.mobiauto.com.br/comprar/motos/pr/harley-davidson/sportster-1200
+    - https://www.mobiauto.com.br/comprar/motos/sp/harley-davidson/sportster-1200
+    - https://www.mobiauto.com.br/comprar/motos/rj/harley-davidson/sportster-1200
   instagram:
-    - https://www.instagram.com/explore/tags/streetglide/
-    - https://www.instagram.com/explore/tags/streetglidebrasil/
-    - https://www.instagram.com/explore/tags/roadglide/
+    - https://www.instagram.com/explore/tags/sportster1200/
+    - https://www.instagram.com/explore/tags/fortyeight/
+    - https://www.instagram.com/explore/tags/iron1200/
+    - https://www.instagram.com/explore/tags/harleysportster/
     - https://www.instagram.com/explore/tags/harleyusada/
-    - https://www.instagram.com/explore/tags/harleydavidsonbrasil/
   marketplace:
-    - "https://www.facebook.com/marketplace/curitiba/search?query=harley%20street%20glide&radius=100"
-    - "https://www.facebook.com/marketplace/saopaulo/search?query=harley%20street%20glide&radius=100"
-    - "https://www.facebook.com/marketplace/riodejaneiro/search?query=harley%20street%20glide&radius=100"
-    - "https://www.facebook.com/marketplace/curitiba/search?query=harley%20road%20glide&radius=100"
-    - "https://www.facebook.com/marketplace/saopaulo/search?query=harley%20road%20glide&radius=100"
-    - "https://www.facebook.com/marketplace/riodejaneiro/search?query=harley%20road%20glide&radius=100"
+    - "https://www.facebook.com/marketplace/curitiba/search?query=harley%20sportster%201200&radius=100"
+    - "https://www.facebook.com/marketplace/saopaulo/search?query=harley%20sportster%201200&radius=100"
+    - "https://www.facebook.com/marketplace/riodejaneiro/search?query=harley%20sportster%201200&radius=100"
+    - "https://www.facebook.com/marketplace/curitiba/search?query=harley%20forty%20eight&radius=100"
+    - "https://www.facebook.com/marketplace/saopaulo/search?query=harley%20forty%20eight&radius=100"
+    - "https://www.facebook.com/marketplace/riodejaneiro/search?query=harley%20forty%20eight&radius=100"
+    - "https://www.facebook.com/marketplace/curitiba/search?query=harley%20iron%201200&radius=100"
+    - "https://www.facebook.com/marketplace/saopaulo/search?query=harley%20iron%201200&radius=100"
+    - "https://www.facebook.com/marketplace/riodejaneiro/search?query=harley%20iron%201200&radius=100"
 match:
-  years: [2014, 2015]
-  maybe_years: [2013, 2016]
-  max_price_cents: 7500000
-  maybe_max_price_cents: 8500000
+  max_age_years: 10
+  max_price_cents: 4500000
+  maybe_max_price_cents: 5500000
 crawl:
   timeout_seconds: 240
   max_concurrent: 4

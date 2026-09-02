@@ -27,7 +27,7 @@ func sample(cents int64) model.Listing {
 		ExternalID:  "abc123",
 		URL:         "https://olx.com.br/abc123",
 		Title:       "Harley Street Glide 2015",
-		Bike:        model.BikeStreetGlide,
+		Bike:        model.BikeSportster1200,
 		Variant:     model.VariantBase,
 		Year:        &year,
 		PriceCents:  &cents,

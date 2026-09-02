@@ -29,7 +29,7 @@ func seededStore(t *testing.T) *store.Store {
 	cents := int64(7200000)
 	matched := model.Listing{
 		Source: "olx", ExternalID: "m1", URL: "https://example.com/m1",
-		Title: "Harley Street Glide Special", Bike: model.BikeStreetGlide,
+		Title: "Harley Street Glide Special", Bike: model.BikeSportster1200,
 		Year: &year, PriceCents: &cents, City: "curitiba", State: "PR",
 		Verdict: model.VerdictMatch,
 	}
@@ -698,7 +698,7 @@ func TestCardShowsThePhoneAsADialableLink(t *testing.T) {
 	cents := int64(7200000)
 	upsert(t, s, model.Listing{
 		Source: "webmotors", ExternalID: "p1", URL: "https://example.com/p1",
-		Title: "Harley Street Glide", Bike: model.BikeStreetGlide, Year: &year,
+		Title: "Harley Street Glide", Bike: model.BikeSportster1200, Year: &year,
 		PriceCents: &cents, City: "curitiba", State: "PR", Phone: &phone,
 		Verdict: model.VerdictMatch,
 	}, time.Now())
@@ -734,7 +734,7 @@ func agedListing(id string, published *time.Time) model.Listing {
 	cents := int64(7200000)
 	return model.Listing{
 		Source: "olx", ExternalID: id, URL: "https://example.com/" + id,
-		Title: "Harley Street Glide", Bike: model.BikeStreetGlide, Year: &year,
+		Title: "Harley Street Glide", Bike: model.BikeSportster1200, Year: &year,
 		PriceCents: &cents, City: "curitiba", State: "PR", PublishedAt: published,
 		Verdict: model.VerdictMatch,
 	}
@@ -823,10 +823,10 @@ func datesLine(body string) string {
 func fipeSeed(t *testing.T, s *store.Store) {
 	t.Helper()
 	refs := []fipe.Reference{
-		{Code: "810059-4", Label: "FLHX", Bike: model.BikeStreetGlide, Variant: model.VariantBase,
-			Year: 2014, PriceCents: 6920700, Month: "agosto de 2026"},
-		{Code: "810060-8", Label: "FLHTK", Bike: model.BikeElectraGlide, Variant: model.VariantUnknown,
-			Year: 2014, PriceCents: 6822400, Month: "agosto de 2026"},
+		{Code: "810066-7", Label: "XL 1200X", Bike: model.BikeSportster1200, Variant: model.VariantFortyEight,
+			Year: 2016, PriceCents: 4698800, Month: "setembro de 2026"},
+		{Code: "810099-3", Label: "XL 1200NS", Bike: model.BikeSportster1200, Variant: model.VariantIron,
+			Year: 2019, PriceCents: 4963500, Month: "setembro de 2026"},
 	}
 	for _, r := range refs {
 		if err := s.SaveFipeReference(r, time.Now()); err != nil {
@@ -854,7 +854,7 @@ func fipeLines(body string) []string {
 func TestCardShowsTheFipeReferenceAndTheGapBelowIt(t *testing.T) {
 	s := emptyStore(t)
 	fipeSeed(t, s)
-	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6200000), time.Now())
+	upsert(t, s, pricedListing("f1", model.BikeSportster1200, model.VariantFortyEight, 2016, 4228900), time.Now())
 
 	code, body := get(t, NewServer(s, fixed()), "/")
 	if code != http.StatusOK {
@@ -864,7 +864,7 @@ func TestCardShowsTheFipeReferenceAndTheGapBelowIt(t *testing.T) {
 	if len(got) != 1 {
 		t.Fatalf("fipe lines = %v, want one", got)
 	}
-	if !strings.Contains(got[0], "FIPE (FLHX 2014): R$ 69.207") {
+	if !strings.Contains(got[0], "FIPE (XL 1200X 2016): R$ 46.988") {
 		t.Errorf("fipe line = %q, want the code, year and reference price", got[0])
 	}
 	if !strings.Contains(got[0], "10% abaixo") {
@@ -875,7 +875,7 @@ func TestCardShowsTheFipeReferenceAndTheGapBelowIt(t *testing.T) {
 func TestFipeGapInTheOwnersFavourGetsTheAccent(t *testing.T) {
 	s := emptyStore(t)
 	fipeSeed(t, s)
-	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6200000), time.Now())
+	upsert(t, s, pricedListing("f1", model.BikeSportster1200, model.VariantFortyEight, 2016, 4228900), time.Now())
 
 	_, body := get(t, NewServer(s, fixed()), "/")
 	if !strings.Contains(body, `class="fipe barganha"`) {
@@ -886,7 +886,7 @@ func TestFipeGapInTheOwnersFavourGetsTheAccent(t *testing.T) {
 func TestFipeGapTooSmallToMatterStaysQuiet(t *testing.T) {
 	s := emptyStore(t)
 	fipeSeed(t, s)
-	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6800000), time.Now())
+	upsert(t, s, pricedListing("f1", model.BikeSportster1200, model.VariantFortyEight, 2016, 4604800), time.Now())
 
 	_, body := get(t, NewServer(s, fixed()), "/")
 	if strings.Contains(body, `class="fipe barganha"`) {
@@ -900,7 +900,7 @@ func TestFipeGapTooSmallToMatterStaysQuiet(t *testing.T) {
 func TestFipeAboveReferenceIsStatedWithoutAccent(t *testing.T) {
 	s := emptyStore(t)
 	fipeSeed(t, s)
-	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 7500000), time.Now())
+	upsert(t, s, pricedListing("f1", model.BikeSportster1200, model.VariantFortyEight, 2016, 5074700), time.Now())
 
 	_, body := get(t, NewServer(s, fixed()), "/")
 	if strings.Contains(body, `class="fipe barganha"`) {
@@ -914,13 +914,13 @@ func TestFipeAboveReferenceIsStatedWithoutAccent(t *testing.T) {
 func TestFipeSaysWhenTheTrimIsAGuess(t *testing.T) {
 	s := emptyStore(t)
 	fipeSeed(t, s)
-	electra := pricedListing("f1", model.BikeElectraGlide, model.VariantUnknown, 2014, 6200000)
-	electra.Verdict = model.VerdictMaybe
-	upsert(t, s, electra, time.Now())
+	untrimmed := pricedListing("f1", model.BikeSportster1200, model.VariantUnknown, 2016, 4228900)
+	untrimmed.Verdict = model.VerdictMaybe
+	upsert(t, s, untrimmed, time.Now())
 
 	_, body := get(t, NewServer(s, fixed()), "/maybe")
 	got := fipeLines(body)
-	if len(got) != 1 || !strings.Contains(got[0], "FIPE (FLHTK 2014 base)") {
+	if len(got) != 1 || !strings.Contains(got[0], "FIPE (XL 1200X 2016 base)") {
 		t.Errorf("fipe lines = %v, want the base-model label", got)
 	}
 }
@@ -928,7 +928,7 @@ func TestFipeSaysWhenTheTrimIsAGuess(t *testing.T) {
 func TestNoFipeLineWhenNothingResolves(t *testing.T) {
 	s := emptyStore(t)
 	fipeSeed(t, s)
-	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2015, 6200000), time.Now())
+	upsert(t, s, pricedListing("f1", model.BikeSportster1200, model.VariantFortyEight, 2021, 4228900), time.Now())
 
 	_, body := get(t, NewServer(s, fixed()), "/")
 	if strings.Contains(body, "FIPE") {
@@ -939,16 +939,16 @@ func TestNoFipeLineWhenNothingResolves(t *testing.T) {
 func TestFipeWithoutAnAskingPriceShowsTheReferenceAlone(t *testing.T) {
 	s := emptyStore(t)
 	fipeSeed(t, s)
-	year := 2014
+	year := 2016
 	upsert(t, s, model.Listing{
 		Source: "webmotors", ExternalID: "f2", URL: "https://example.com/f2",
-		Title: "Harley Street Glide", Bike: model.BikeStreetGlide, Variant: model.VariantBase,
+		Title: "Harley Forty Eight", Bike: model.BikeSportster1200, Variant: model.VariantFortyEight,
 		Year: &year, City: "curitiba", State: "PR", Verdict: model.VerdictMatch,
 	}, time.Now())
 
 	_, body := get(t, NewServer(s, fixed()), "/")
 	got := fipeLines(body)
-	if len(got) != 1 || !strings.Contains(got[0], "FIPE (FLHX 2014): R$ 69.207") {
+	if len(got) != 1 || !strings.Contains(got[0], "FIPE (XL 1200X 2016): R$ 46.988") {
 		t.Errorf("fipe lines = %v, want the reference alone", got)
 	}
 	if strings.Contains(strings.Join(got, " "), "abaixo") || strings.Contains(strings.Join(got, " "), "acima") {
@@ -959,7 +959,7 @@ func TestFipeWithoutAnAskingPriceShowsTheReferenceAlone(t *testing.T) {
 func TestFipeReferenceNeverMovesTheVerdict(t *testing.T) {
 	s := emptyStore(t)
 	fipeSeed(t, s)
-	upsert(t, s, pricedListing("f1", model.BikeStreetGlide, model.VariantBase, 2014, 6200000), time.Now())
+	upsert(t, s, pricedListing("f1", model.BikeSportster1200, model.VariantFortyEight, 2016, 4228900), time.Now())
 
 	rows, err := s.ListByVerdict(model.VerdictMatch)
 	if err != nil {

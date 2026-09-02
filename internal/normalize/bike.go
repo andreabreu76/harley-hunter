@@ -53,7 +53,7 @@ func captionBody(text string) string {
 
 func namesAFamily(bike string) bool {
 	switch bike {
-	case model.BikeStreetGlide, model.BikeRoadGlide, model.BikeElectraGlide, model.BikeUltra:
+	case model.BikeSportster1200, model.BikeSportster883, model.BikeSportsterS:
 		return true
 	}
 	return false
@@ -65,29 +65,92 @@ func detectBike(text, name string) (string, string) {
 	named := Fold(name)
 
 	switch {
-	case containsAny(t, compact, "electra glide", "electraglide", "flht"):
-		return model.BikeElectraGlide, model.VariantUnknown
-	case containsAny(t, compact, "road glide", "roadglide", "fltrx"):
-		return model.BikeRoadGlide, detectVariant(t, compact, named, "fltrxse", "fltrxs")
-	case containsAny(t, compact, "street glide", "streetglide", "stglide", "flhx"):
-		return model.BikeStreetGlide, detectVariant(t, compact, named, "flhxse", "flhxs")
-	case containsAny(t, compact, "ultra limited", "ultraclassic", "ultra classic"):
-		return model.BikeUltra, model.VariantUnknown
-	case isHarley(t) && containsAny(t, compact, "touring", "1690", "1745", "rushmore"):
-		return model.BikeTouringUnknown, model.VariantUnknown
+	case containsCode(compact, "xr1200"):
+		return model.BikeSportsterUnknown, model.VariantUnknown
+	case namesSportsterS(t, compact):
+		return model.BikeSportsterS, model.VariantUnknown
+	case names1200(t, compact):
+		return model.BikeSportster1200, detectVariant(t, compact, named)
+	case names883(t, compact):
+		return model.BikeSportster883, model.VariantUnknown
+	case namesSportster(t):
+		return model.BikeSportsterUnknown, model.VariantUnknown
 	default:
 		return model.BikeOther, model.VariantUnknown
 	}
 }
 
-func detectVariant(t, compact, named, cvoCode, specialCode string) string {
-	if containsWord(named, "cvo") || containsCode(compact, cvoCode) {
-		return model.VariantCVO
+var displacementCodes = []string{"xl1200cx", "xl1200ns", "xl1200c", "xl1200x", "xl1200n", "xl1200t", "xl1200v", "xl1200"}
+
+func names1200(t, compact string) bool {
+	for _, code := range displacementCodes {
+		if containsCode(compact, code) {
+			return true
+		}
 	}
-	if containsWord(t, "special", "especial") || containsCode(compact, specialCode) {
-		return model.VariantSpecial
+	if containsAny(t, compact, "xl 1200", "xl1200", "forty eight", "fortyeight", "seventy two", "seventytwo", "iron 1200", "iron1200") {
+		return true
+	}
+	if namesTheFortyEight(t) {
+		return true
+	}
+	if containsWord(t, "roadster") && inSportsterContext(t) {
+		return true
+	}
+	return strings.Contains(t, "1200") && inSportsterContext(t)
+}
+
+func names883(t, compact string) bool {
+	for _, code := range []string{"xl883n", "xl883l", "xl883r", "xl883"} {
+		if containsCode(compact, code) {
+			return true
+		}
+	}
+	return strings.Contains(t, "883") && inSportsterContext(t)
+}
+
+func namesSportsterS(t, compact string) bool {
+	return containsWord(t, "sportster s") || containsCode(compact, "rh1250")
+}
+
+func namesSportster(t string) bool {
+	if strings.Contains(t, "sportster") {
+		return true
+	}
+	return isHarley(t) && containsWord(t, "iron", "nightster", "superlow", "roadster", "forty eight")
+}
+
+func namesTheFortyEight(t string) bool {
+	return containsWord(t, "harley 48", "davidson 48", "hd 48", "sportster 48")
+}
+
+func inSportsterContext(t string) bool {
+	return strings.Contains(t, "sportster") || isHarley(t)
+}
+
+func detectVariant(t, compact, named string) string {
+	if v := variantIn(named, compactor.Replace(named)); v != model.VariantUnknown {
+		return v
+	}
+	if v := variantIn(t, compact); v != model.VariantUnknown {
+		return v
 	}
 	return model.VariantBase
+}
+
+func variantIn(t, compact string) string {
+	switch {
+	case containsCode(compact, "xl1200cx") || containsWord(t, "roadster"):
+		return model.VariantRoadster
+	case containsCode(compact, "xl1200ns") || containsWord(t, "iron"):
+		return model.VariantIron
+	case containsCode(compact, "xl1200x") || containsAny(t, compact, "forty eight", "fortyeight") || namesTheFortyEight(t):
+		return model.VariantFortyEight
+	case containsCode(compact, "xl1200c") || containsWord(t, "custom"):
+		return model.VariantCustom
+	default:
+		return model.VariantUnknown
+	}
 }
 
 func containsWord(text string, words ...string) bool {

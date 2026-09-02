@@ -38,7 +38,7 @@ func TestClientTreatsAServerFaultAsAnError(t *testing.T) {
 
 func TestClientReturnsAHealthyBody(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte(readFixture(t, "value-5760-2014.json")))
+		w.Write([]byte(readFixture(t, "value-6719-2016.json")))
 	}))
 	defer server.Close()
 
@@ -47,7 +47,7 @@ func TestClientReturnsAHealthyBody(t *testing.T) {
 		t.Fatalf("FetchPage: %v", err)
 	}
 	q, err := ParseQuote(strings.NewReader(body))
-	if err != nil || q.Code != "810059-4" {
+	if err != nil || q.Code != "810066-7" {
 		t.Errorf("quote = %+v, err = %v", q, err)
 	}
 }

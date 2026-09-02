@@ -58,8 +58,8 @@ source_urls:
   olx:
     - https://www.olx.com.br/x
 match:
-  years: [2014]
-  max_price_cents: 7500000
+  max_age_years: 10
+  max_price_cents: 4500000
 crawl:
   interval_hours: 12
 `
@@ -189,7 +189,7 @@ func TestRunnerSaysWhyItIsNotCollectingOncePerReason(t *testing.T) {
 	if got := strings.Count(warned.String(), "\n"); got != 1 {
 		t.Errorf("three ticks with the same broken config wrote %d lines, want 1:\n%s", got, warned.String())
 	}
-	if !strings.Contains(warned.String(), "no target year") {
+	if !strings.Contains(warned.String(), "max_age_years") {
 		t.Errorf("the log does not say what the config is missing:\n%s", warned.String())
 	}
 

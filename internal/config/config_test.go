@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeConfig(t *testing.T, dir, databasePath string) string {
@@ -18,8 +19,8 @@ source_urls:
   olx:
     - https://www.olx.com.br/autos-e-pecas/motos/estado-pr?q=harley
 match:
-  years: [2014]
-  max_price_cents: 7500000
+  max_age_years: 10
+  max_price_cents: 4500000
 `, databasePath)
 	path := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -43,14 +44,17 @@ func TestLoadReadsCriteria(t *testing.T) {
 	if len(cfg.Sources) != 2 || cfg.Sources[0] != "olx" {
 		t.Errorf("Sources = %v, want [olx mercadolivre]", cfg.Sources)
 	}
-	if cfg.Match.MaxPriceCents != 7500000 {
-		t.Errorf("MaxPriceCents = %d, want 7500000", cfg.Match.MaxPriceCents)
+	if cfg.Match.MaxPriceCents != 4500000 {
+		t.Errorf("MaxPriceCents = %d, want 4500000", cfg.Match.MaxPriceCents)
 	}
-	if cfg.Match.MaybeMaxPriceCents != 8500000 {
-		t.Errorf("MaybeMaxPriceCents = %d, want 8500000", cfg.Match.MaybeMaxPriceCents)
+	if cfg.Match.MaybeMaxPriceCents != 5500000 {
+		t.Errorf("MaybeMaxPriceCents = %d, want 5500000", cfg.Match.MaybeMaxPriceCents)
 	}
-	if len(cfg.Match.Years) != 2 || cfg.Match.Years[0] != 2014 {
-		t.Errorf("Years = %v, want [2014 2015]", cfg.Match.Years)
+	if cfg.Match.MaxAgeYears != 10 {
+		t.Errorf("MaxAgeYears = %d, want 10", cfg.Match.MaxAgeYears)
+	}
+	if want := time.Now().Year() - 10; cfg.Match.MinYear != want {
+		t.Errorf("MinYear = %d, want %d: the cut follows the financing rule, not a literal list", cfg.Match.MinYear, want)
 	}
 }
 
@@ -144,7 +148,7 @@ func TestValidateRejectsWhatCannotCollect(t *testing.T) {
 		DatabasePath: "/tmp/hunter.db",
 		Sources:      []string{"olx"},
 		SourceURLs:   map[string][]string{"olx": {"https://www.olx.com.br/x"}},
-		Match:        MatchCriteria{Years: []int{2014}, MaxPriceCents: 7500000},
+		Match:        MatchCriteria{MaxAgeYears: 10, MinYear: 2016, MaxPriceCents: 4500000},
 	}
 	if err := Validate(base); err != nil {
 		t.Fatalf("Validate on a complete config returned error: %v", err)
@@ -156,7 +160,7 @@ func TestValidateRejectsWhatCannotCollect(t *testing.T) {
 		want   string
 	}{
 		{"no source", func(c *Config) { c.Sources = nil }, "sources"},
-		{"no match year", func(c *Config) { c.Match.Years = nil }, "year"},
+		{"no max age", func(c *Config) { c.Match.MaxAgeYears = 0 }, "year"},
 		{"no max price", func(c *Config) { c.Match.MaxPriceCents = 0 }, "price"},
 		{"source without urls", func(c *Config) { c.SourceURLs = map[string][]string{} }, "olx"},
 		{"no database path", func(c *Config) { c.DatabasePath = "" }, "database_path"},
@@ -209,5 +213,22 @@ func TestEnsureFileLeavesAnExistingConfigAlone(t *testing.T) {
 	}
 	if !bytes.Equal(original, after) {
 		t.Errorf("EnsureFile rewrote an existing config:\n%s", after)
+	}
+}
+
+func TestMinYearFollowsTheFinancingRule(t *testing.T) {
+	cases := []struct {
+		maxAge int
+		now    time.Time
+		want   int
+	}{
+		{10, time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC), 2016},
+		{10, time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC), 2017},
+		{0, time.Date(2026, 9, 2, 0, 0, 0, 0, time.UTC), 0},
+	}
+	for _, c := range cases {
+		if got := minYearFor(c.maxAge, c.now); got != c.want {
+			t.Errorf("minYearFor(%d, %s) = %d, want %d", c.maxAge, c.now.Format("2006-01-02"), got, c.want)
+		}
 	}
 }

@@ -27,19 +27,20 @@ const (
 )
 
 const (
-	BikeStreetGlide    = "street_glide"
-	BikeRoadGlide      = "road_glide"
-	BikeElectraGlide   = "electra_glide"
-	BikeUltra          = "ultra"
-	BikeTouringUnknown = "touring_unknown"
-	BikeOther          = "other"
+	BikeSportster1200    = "sportster_1200"
+	BikeSportster883     = "sportster_883"
+	BikeSportsterS       = "sportster_s"
+	BikeSportsterUnknown = "sportster_unknown"
+	BikeOther            = "other"
 )
 
 const (
-	VariantBase    = "base"
-	VariantSpecial = "special"
-	VariantCVO     = "cvo"
-	VariantUnknown = "unknown"
+	VariantCustom     = "custom"
+	VariantIron       = "iron"
+	VariantFortyEight = "forty_eight"
+	VariantRoadster   = "roadster"
+	VariantBase       = "base"
+	VariantUnknown    = "unknown"
 )
 
 type RawListing struct {

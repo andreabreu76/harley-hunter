@@ -1,8 +1,6 @@
 package match
 
 import (
-	"slices"
-
 	"github.com/andreabreu76/harley-hunter/internal/config"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/normalize"
@@ -20,9 +18,9 @@ func Evaluate(l model.Listing, c config.MatchCriteria) (model.Verdict, map[strin
 
 func evaluateBike(bike string) model.Verdict {
 	switch bike {
-	case model.BikeStreetGlide, model.BikeRoadGlide:
+	case model.BikeSportster1200:
 		return model.VerdictMatch
-	case model.BikeElectraGlide, model.BikeUltra, model.BikeTouringUnknown:
+	case model.BikeSportster883, model.BikeSportsterS, model.BikeSportsterUnknown:
 		return model.VerdictMaybe
 	default:
 		return model.VerdictReject
@@ -33,11 +31,8 @@ func evaluateYear(year *int, c config.MatchCriteria) model.Verdict {
 	if year == nil {
 		return model.VerdictMaybe
 	}
-	if slices.Contains(c.Years, *year) {
+	if *year >= c.MinYear {
 		return model.VerdictMatch
-	}
-	if slices.Contains(c.MaybeYears, *year) {
-		return model.VerdictMaybe
 	}
 	return model.VerdictReject
 }
