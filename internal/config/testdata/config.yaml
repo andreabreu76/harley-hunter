@@ -10,7 +10,7 @@ source_urls:
   mercadolivre:
     - https://lista.mercadolivre.com.br/harley-davidson-sportster-1200
 match:
-  max_age_years: 10
+  years: [2016]
   max_price_cents: 4500000
   maybe_max_price_cents: 5500000
 crawl:

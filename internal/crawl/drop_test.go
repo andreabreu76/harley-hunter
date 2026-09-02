@@ -178,8 +178,8 @@ func TestNotifyRanksTheDeeperFipeDiscountFirst(t *testing.T) {
 
 	refs := fipe.NewTable([]fipe.Reference{{
 		Bike:       model.BikeSportster1200,
-		Variant:    model.VariantIron,
-		Year:       2019,
+		Variant:    model.VariantFortyEight,
+		Year:       2016,
 		PriceCents: 4900000,
 	}})
 

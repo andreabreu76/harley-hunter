@@ -73,7 +73,7 @@ var metroCities = map[string]string{
 	"itaperucu":             "PR",
 }
 
-var targetStates = map[string]bool{"RJ": true, "SP": true, "PR": true}
+var targetStates = map[string]bool{"RJ": true}
 
 var stateNames = map[string]string{
 	"acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM",

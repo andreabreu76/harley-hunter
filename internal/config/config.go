@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -12,10 +11,10 @@ import (
 const defaultIntervalHours = 12
 
 type MatchCriteria struct {
-	MaxAgeYears        int   `yaml:"max_age_years"`
+	Years              []int `yaml:"years"`
+	MaybeYears         []int `yaml:"maybe_years"`
 	MaxPriceCents      int64 `yaml:"max_price_cents"`
 	MaybeMaxPriceCents int64 `yaml:"maybe_max_price_cents"`
-	MinYear            int   `yaml:"-"`
 }
 
 type CrawlSettings struct {
@@ -56,15 +55,7 @@ func Load(path string) (Config, error) {
 	if cfg.Crawl.IntervalHours <= 0 {
 		cfg.Crawl.IntervalHours = defaultIntervalHours
 	}
-	cfg.Match.MinYear = minYearFor(cfg.Match.MaxAgeYears, time.Now())
 	return cfg, nil
-}
-
-func minYearFor(maxAgeYears int, now time.Time) int {
-	if maxAgeYears <= 0 {
-		return 0
-	}
-	return now.Year() - maxAgeYears
 }
 
 func Validate(cfg Config) error {
@@ -74,8 +65,8 @@ func Validate(cfg Config) error {
 	if len(cfg.Sources) == 0 {
 		return fmt.Errorf("config has no sources enabled")
 	}
-	if cfg.Match.MaxAgeYears <= 0 {
-		return fmt.Errorf("config has no max_age_years: without it there is no oldest model year the financing still takes")
+	if len(cfg.Match.Years) == 0 {
+		return fmt.Errorf("config has no target year")
 	}
 	if cfg.Match.MaxPriceCents <= 0 {
 		return fmt.Errorf("config has no max price")

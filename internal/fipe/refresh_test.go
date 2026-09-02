@@ -68,7 +68,7 @@ func TestRefreshStoresEveryQuoteFipePublishes(t *testing.T) {
 	fetcher := &fakeFetcher{}
 	db := &memoryStore{}
 
-	stored, err := Refresh(context.Background(), fetcher, db, august(), 2016)
+	stored, err := Refresh(context.Background(), fetcher, db, august(), []int{2016, 2017, 2018, 2019, 2020})
 	if err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
@@ -76,7 +76,7 @@ func TestRefreshStoresEveryQuoteFipePublishes(t *testing.T) {
 		t.Errorf("Refresh reported %d stored, saved %d", stored, len(db.saved))
 	}
 	if stored != 10 {
-		t.Errorf("stored = %d, want 10: fipe publishes no XL1200 quote outside 2016-2020", stored)
+		t.Errorf("stored = %d, want 10: every quote fipe publishes across the asked years", stored)
 	}
 
 	byCombo := make(map[string]Reference, len(db.saved))
@@ -118,7 +118,7 @@ func TestRefreshSkipsCombosAlreadyFetchedThisMonth(t *testing.T) {
 		"sportster_1200|forty_eight|2016": time.Date(2026, 8, 1, 3, 0, 0, 0, time.UTC),
 	}}
 
-	if _, err := Refresh(context.Background(), fetcher, db, august(), 2016); err != nil {
+	if _, err := Refresh(context.Background(), fetcher, db, august(), []int{2016, 2017, 2018, 2019, 2020}); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
 	for _, url := range fetcher.asked {
@@ -134,7 +134,7 @@ func TestRefreshAsksAgainOnceTheMonthTurns(t *testing.T) {
 		"sportster_1200|forty_eight|2016": time.Date(2026, 7, 31, 23, 0, 0, 0, time.UTC),
 	}}
 
-	if _, err := Refresh(context.Background(), fetcher, db, august(), 2016); err != nil {
+	if _, err := Refresh(context.Background(), fetcher, db, august(), []int{2016, 2017, 2018, 2019, 2020}); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
 	asked := false
@@ -152,7 +152,7 @@ func TestRefreshSurvivesAFipeOutage(t *testing.T) {
 	fetcher := &fakeFetcher{err: errors.New("fipe is down")}
 	db := &memoryStore{}
 
-	stored, err := Refresh(context.Background(), fetcher, db, august(), 2016)
+	stored, err := Refresh(context.Background(), fetcher, db, august(), []int{2016, 2017, 2018, 2019, 2020})
 	if err != nil {
 		t.Fatalf("Refresh must never fail the round: %v", err)
 	}
@@ -165,13 +165,13 @@ func TestRefreshSurvivesAFipeOutage(t *testing.T) {
 }
 
 func TestRefreshSurvivesAnUnreadableStore(t *testing.T) {
-	if _, err := Refresh(context.Background(), &fakeFetcher{}, &memoryStore{loadErr: errors.New("db locked")}, august(), 2016); err != nil {
+	if _, err := Refresh(context.Background(), &fakeFetcher{}, &memoryStore{loadErr: errors.New("db locked")}, august(), []int{2016, 2017, 2018, 2019, 2020}); err != nil {
 		t.Fatalf("Refresh must never fail the round: %v", err)
 	}
 }
 
 func TestRefreshKeepsGoingWhenOneSaveFails(t *testing.T) {
-	stored, err := Refresh(context.Background(), &fakeFetcher{}, &memoryStore{saveErr: errors.New("db locked")}, august(), 2016)
+	stored, err := Refresh(context.Background(), &fakeFetcher{}, &memoryStore{saveErr: errors.New("db locked")}, august(), []int{2016, 2017, 2018, 2019, 2020})
 	if err != nil {
 		t.Fatalf("Refresh must never fail the round: %v", err)
 	}
@@ -185,7 +185,7 @@ func TestRefreshStopsWhenTheRoundIsCancelled(t *testing.T) {
 	cancel()
 
 	fetcher := &fakeFetcher{}
-	if _, err := Refresh(ctx, fetcher, &memoryStore{}, august(), 2016); err != nil {
+	if _, err := Refresh(ctx, fetcher, &memoryStore{}, august(), []int{2016, 2017, 2018, 2019, 2020}); err != nil {
 		t.Fatalf("Refresh must never fail the round: %v", err)
 	}
 	if len(fetcher.asked) != 0 {
@@ -193,27 +193,28 @@ func TestRefreshStopsWhenTheRoundIsCancelled(t *testing.T) {
 	}
 }
 
-func TestRefreshCoversEveryYearTheFinancingStillTakes(t *testing.T) {
+func TestRefreshAsksOnlyForTheYearsTheConfigWatches(t *testing.T) {
 	fetcher := &fakeFetcher{}
-	if _, err := Refresh(context.Background(), fetcher, &memoryStore{}, august(), 2016); err != nil {
+	years := []int{2016}
+	if _, err := Refresh(context.Background(), fetcher, &memoryStore{}, august(), years); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	years := watchedYears(2016, august())
 	if got, want := len(fetcher.asked), len(models)*len(years); got != want {
 		t.Errorf("asked %d urls, want %d (every mapped combo across %v)", got, want, years)
 	}
-	for _, year := range years {
-		if year < 2016 || year > 2026 {
-			t.Errorf("watched year %d is outside the window the financing allows", year)
+	for _, url := range fetcher.asked {
+		if !strings.Contains(url, "/2016-1") {
+			t.Errorf("asked %s, want only the target year: a quote for another year is never read", url)
 		}
 	}
 }
 
-func TestWatchedYearsFollowTheFinancingCut(t *testing.T) {
-	if got := watchedYears(2016, august()); len(got) != 11 || got[0] != 2016 || got[len(got)-1] != 2026 {
-		t.Errorf("watchedYears = %v, want 2016 through 2026", got)
+func TestRefreshAsksNothingWithoutAYear(t *testing.T) {
+	fetcher := &fakeFetcher{}
+	if _, err := Refresh(context.Background(), fetcher, &memoryStore{}, august(), nil); err != nil {
+		t.Fatalf("Refresh: %v", err)
 	}
-	if got := watchedYears(0, august()); got != nil {
-		t.Errorf("watchedYears = %v, want nil: without a cut there is no window to ask about", got)
+	if len(fetcher.asked) != 0 {
+		t.Errorf("asked %d urls without a target year, want none", len(fetcher.asked))
 	}
 }

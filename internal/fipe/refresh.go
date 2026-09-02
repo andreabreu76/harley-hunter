@@ -22,7 +22,7 @@ type Store interface {
 
 var outageOnce sync.Once
 
-func Refresh(ctx context.Context, fetcher PageFetcher, s Store, now time.Time, minYear int) (int, error) {
+func Refresh(ctx context.Context, fetcher PageFetcher, s Store, now time.Time, years []int) (int, error) {
 	fetched, err := s.FipeFetchedAt()
 	if err != nil {
 		reportOutage("fipe: reading the stored references: %v", err)
@@ -30,7 +30,6 @@ func Refresh(ctx context.Context, fetcher PageFetcher, s Store, now time.Time, m
 	}
 
 	stored := 0
-	years := watchedYears(minYear, now)
 	for _, ref := range models {
 		for _, year := range years {
 			if ctx.Err() != nil {
@@ -65,17 +64,6 @@ func Refresh(ctx context.Context, fetcher PageFetcher, s Store, now time.Time, m
 		}
 	}
 	return stored, nil
-}
-
-func watchedYears(minYear int, now time.Time) []int {
-	if minYear <= 0 {
-		return nil
-	}
-	var years []int
-	for year := minYear; year <= now.Year(); year++ {
-		years = append(years, year)
-	}
-	return years
 }
 
 func stale(fetchedAt, now time.Time) bool {

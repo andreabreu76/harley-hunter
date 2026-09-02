@@ -9,8 +9,7 @@ import (
 
 func criteria() config.MatchCriteria {
 	return config.MatchCriteria{
-		MaxAgeYears:        10,
-		MinYear:            2016,
+		Years:              []int{2016},
 		MaxPriceCents:      4500000,
 		MaybeMaxPriceCents: 5500000,
 	}
@@ -33,21 +32,21 @@ func TestEvaluate(t *testing.T) {
 		in   model.Listing
 		want model.Verdict
 	}{
-		{"sportster 1200 in target", listing(model.BikeSportster1200, 2019, 4300000, "curitiba", "PR"), model.VerdictMatch},
-		{"the oldest year the financing takes", listing(model.BikeSportster1200, 2016, 4490000, "sao paulo", "SP"), model.VerdictMatch},
-		{"metro area counts", listing(model.BikeSportster1200, 2018, 4200000, "niteroi", "RJ"), model.VerdictMatch},
-		{"883 within budget is maybe", listing(model.BikeSportster883, 2019, 4000000, "curitiba", "PR"), model.VerdictMaybe},
-		{"sportster s within budget is maybe", listing(model.BikeSportsterS, 2023, 4400000, "curitiba", "PR"), model.VerdictMaybe},
-		{"unknown sportster is maybe", listing(model.BikeSportsterUnknown, 2019, 4000000, "curitiba", "PR"), model.VerdictMaybe},
-		{"other brand rejected", listing(model.BikeOther, 2019, 4000000, "curitiba", "PR"), model.VerdictReject},
-		{"a year the financing will not take is rejected", listing(model.BikeSportster1200, 2015, 4000000, "curitiba", "PR"), model.VerdictReject},
-		{"missing year is maybe", listing(model.BikeSportster1200, 0, 4000000, "curitiba", "PR"), model.VerdictMaybe},
-		{"missing price is maybe", listing(model.BikeSportster1200, 2019, 0, "curitiba", "PR"), model.VerdictMaybe},
-		{"slightly over budget is maybe", listing(model.BikeSportster1200, 2019, 5000000, "curitiba", "PR"), model.VerdictMaybe},
-		{"far over budget rejected", listing(model.BikeSportster1200, 2019, 6500000, "curitiba", "PR"), model.VerdictReject},
-		{"same state is maybe", listing(model.BikeSportster1200, 2019, 4000000, "campinas", "SP"), model.VerdictMaybe},
-		{"other state rejected", listing(model.BikeSportster1200, 2019, 4000000, "belo horizonte", "MG"), model.VerdictReject},
-		{"old year rejected", listing(model.BikeSportster1200, 2009, 4000000, "curitiba", "PR"), model.VerdictReject},
+		{"sportster 1200 in target", listing(model.BikeSportster1200, 2016, 4300000, "rio de janeiro", "RJ"), model.VerdictMatch},
+		{"the target year at the budget ceiling", listing(model.BikeSportster1200, 2016, 4490000, "niteroi", "RJ"), model.VerdictMatch},
+		{"metro area counts", listing(model.BikeSportster1200, 2016, 4200000, "marica", "RJ"), model.VerdictMatch},
+		{"883 within budget is maybe", listing(model.BikeSportster883, 2016, 4000000, "rio de janeiro", "RJ"), model.VerdictMaybe},
+		{"sportster s within budget is maybe", listing(model.BikeSportsterS, 2016, 4400000, "rio de janeiro", "RJ"), model.VerdictMaybe},
+		{"unknown sportster is maybe", listing(model.BikeSportsterUnknown, 2016, 4000000, "rio de janeiro", "RJ"), model.VerdictMaybe},
+		{"other brand rejected", listing(model.BikeOther, 2016, 4000000, "rio de janeiro", "RJ"), model.VerdictReject},
+		{"a year outside the target is rejected", listing(model.BikeSportster1200, 2017, 4000000, "rio de janeiro", "RJ"), model.VerdictReject},
+		{"missing year is maybe", listing(model.BikeSportster1200, 0, 4000000, "rio de janeiro", "RJ"), model.VerdictMaybe},
+		{"missing price is maybe", listing(model.BikeSportster1200, 2016, 0, "rio de janeiro", "RJ"), model.VerdictMaybe},
+		{"slightly over budget is maybe", listing(model.BikeSportster1200, 2016, 5000000, "rio de janeiro", "RJ"), model.VerdictMaybe},
+		{"far over budget rejected", listing(model.BikeSportster1200, 2016, 6500000, "rio de janeiro", "RJ"), model.VerdictReject},
+		{"same state is maybe", listing(model.BikeSportster1200, 2016, 4000000, "volta redonda", "RJ"), model.VerdictMaybe},
+		{"other state rejected", listing(model.BikeSportster1200, 2016, 4000000, "sao paulo", "SP"), model.VerdictReject},
+		{"old year rejected", listing(model.BikeSportster1200, 2009, 4000000, "rio de janeiro", "RJ"), model.VerdictReject},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -70,12 +69,12 @@ func TestEvaluateBoundaries(t *testing.T) {
 		axis     string
 		axisWant model.Verdict
 	}{
-		{"price exactly at budget still matches", listing(model.BikeSportster1200, 2019, 4500000, "curitiba", "PR"), model.VerdictMatch, model.AxisPrice, model.VerdictMatch},
-		{"one cent over budget is maybe", listing(model.BikeSportster1200, 2019, 4500001, "curitiba", "PR"), model.VerdictMaybe, model.AxisPrice, model.VerdictMaybe},
-		{"price exactly at maybe ceiling is maybe", listing(model.BikeSportster1200, 2019, 5500000, "curitiba", "PR"), model.VerdictMaybe, model.AxisPrice, model.VerdictMaybe},
-		{"one cent over maybe ceiling is rejected", listing(model.BikeSportster1200, 2019, 5500001, "curitiba", "PR"), model.VerdictReject, model.AxisPrice, model.VerdictReject},
-		{"the year right below the cut is rejected", listing(model.BikeSportster1200, 2015, 4000000, "curitiba", "PR"), model.VerdictReject, model.AxisYear, model.VerdictReject},
-		{"year and price both absent is maybe", listing(model.BikeSportster1200, 0, 0, "curitiba", "PR"), model.VerdictMaybe, model.AxisYear, model.VerdictMaybe},
+		{"price exactly at budget still matches", listing(model.BikeSportster1200, 2016, 4500000, "rio de janeiro", "RJ"), model.VerdictMatch, model.AxisPrice, model.VerdictMatch},
+		{"one cent over budget is maybe", listing(model.BikeSportster1200, 2016, 4500001, "rio de janeiro", "RJ"), model.VerdictMaybe, model.AxisPrice, model.VerdictMaybe},
+		{"price exactly at maybe ceiling is maybe", listing(model.BikeSportster1200, 2016, 5500000, "rio de janeiro", "RJ"), model.VerdictMaybe, model.AxisPrice, model.VerdictMaybe},
+		{"one cent over maybe ceiling is rejected", listing(model.BikeSportster1200, 2016, 5500001, "rio de janeiro", "RJ"), model.VerdictReject, model.AxisPrice, model.VerdictReject},
+		{"the year right below the cut is rejected", listing(model.BikeSportster1200, 2015, 4000000, "rio de janeiro", "RJ"), model.VerdictReject, model.AxisYear, model.VerdictReject},
+		{"year and price both absent is maybe", listing(model.BikeSportster1200, 0, 0, "rio de janeiro", "RJ"), model.VerdictMaybe, model.AxisYear, model.VerdictMaybe},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -90,17 +89,34 @@ func TestEvaluateBoundaries(t *testing.T) {
 	}
 }
 
-func TestAnyYearFromTheCutOnwardMatches(t *testing.T) {
-	for _, year := range []int{2016, 2017, 2018, 2019, 2020, 2026} {
-		_, axes := Evaluate(listing(model.BikeSportster1200, year, 4000000, "curitiba", "PR"), criteria())
-		if axes[model.AxisYear] != model.VerdictMatch {
-			t.Errorf("year %d axis = %q, want match: the cut is a floor, not a list", year, axes[model.AxisYear])
+func TestOnlyTheTargetYearMatches(t *testing.T) {
+	if _, axes := Evaluate(listing(model.BikeSportster1200, 2016, 4000000, "rio de janeiro", "RJ"), criteria()); axes[model.AxisYear] != model.VerdictMatch {
+		t.Errorf("2016 axis = %q, want match", axes[model.AxisYear])
+	}
+	for _, year := range []int{2014, 2015, 2017, 2019, 2026} {
+		_, axes := Evaluate(listing(model.BikeSportster1200, year, 4000000, "rio de janeiro", "RJ"), criteria())
+		if axes[model.AxisYear] != model.VerdictReject {
+			t.Errorf("year %d axis = %q, want reject: the target is the 2016 model year alone", year, axes[model.AxisYear])
+		}
+	}
+}
+
+func TestSaoPauloAndParanaAreOutsideTheTarget(t *testing.T) {
+	for _, place := range []struct{ city, state string }{
+		{"sao paulo", "SP"}, {"guarulhos", "SP"}, {"curitiba", "PR"},
+	} {
+		verdict, axes := Evaluate(listing(model.BikeSportster1200, 2016, 4000000, place.city, place.state), criteria())
+		if axes[model.AxisLocation] != model.VerdictReject {
+			t.Errorf("%s/%s location axis = %q, want reject: the hunt is Rio only", place.city, place.state, axes[model.AxisLocation])
+		}
+		if verdict != model.VerdictReject {
+			t.Errorf("%s/%s = %q, want reject", place.city, place.state, verdict)
 		}
 	}
 }
 
 func TestEvaluateNeverRejectsOnAbsentValuesAlone(t *testing.T) {
-	l := listing(model.BikeSportster1200, 0, 0, "curitiba", "PR")
+	l := listing(model.BikeSportster1200, 0, 0, "rio de janeiro", "RJ")
 	got, axes := Evaluate(l, criteria())
 	if got == model.VerdictReject {
 		t.Fatalf("absent year and price must not reject, got %q (axes: %v)", got, axes)
@@ -112,7 +128,7 @@ func TestEvaluateNeverRejectsOnAbsentValuesAlone(t *testing.T) {
 
 func TestSportsterSiblingsNeverReachMatch(t *testing.T) {
 	for _, bike := range []string{model.BikeSportster883, model.BikeSportsterS, model.BikeSportsterUnknown} {
-		verdict, axes := Evaluate(listing(bike, 2019, 4000000, "curitiba", "PR"), criteria())
+		verdict, axes := Evaluate(listing(bike, 2016, 4000000, "rio de janeiro", "RJ"), criteria())
 		if verdict != model.VerdictMaybe {
 			t.Errorf("%s = %q, want maybe with every other axis matching", bike, verdict)
 		}
@@ -128,16 +144,16 @@ func TestSportsterSiblingsNeverReachMatch(t *testing.T) {
 }
 
 func TestOnlyTheSportster1200CanMatch(t *testing.T) {
-	if got, _ := Evaluate(listing(model.BikeSportster1200, 2019, 4000000, "curitiba", "PR"), criteria()); got != model.VerdictMatch {
+	if got, _ := Evaluate(listing(model.BikeSportster1200, 2016, 4000000, "rio de janeiro", "RJ"), criteria()); got != model.VerdictMatch {
 		t.Errorf("sportster_1200 = %q, want match", got)
 	}
-	if got, _ := Evaluate(listing(model.BikeOther, 2019, 4000000, "curitiba", "PR"), criteria()); got != model.VerdictReject {
+	if got, _ := Evaluate(listing(model.BikeOther, 2016, 4000000, "rio de janeiro", "RJ"), criteria()); got != model.VerdictReject {
 		t.Errorf("other = %q, want reject: the radar is not open to every Harley", got)
 	}
 }
 
 func TestAbsentLocationIsMaybeLikeEveryOtherAbsentAxis(t *testing.T) {
-	l := listing(model.BikeSportster1200, 2018, 4480000, "", "")
+	l := listing(model.BikeSportster1200, 2016, 4480000, "", "")
 
 	verdict, axes := Evaluate(l, criteria())
 	if axes[model.AxisLocation] != model.VerdictMaybe {
@@ -149,14 +165,14 @@ func TestAbsentLocationIsMaybeLikeEveryOtherAbsentAxis(t *testing.T) {
 	}
 }
 
-func TestTheInstagramIron1200ReachesTalvez(t *testing.T) {
-	year := 2019
+func TestTheInstagramFortyEightReachesTalvez(t *testing.T) {
+	year := 2016
 	cents := int64(4480000)
 	km := 12400
 	l := model.Listing{
 		Source: "instagram", ExternalID: "DVgc6lPkQVb",
-		Title: "HD Iron 1200 2019/2019 12.400km 1.200cc",
-		Bike:  model.BikeSportster1200, Variant: model.VariantIron,
+		Title: "HD Forty Eight 2016/2016 12.400km 1.200cc",
+		Bike:  model.BikeSportster1200, Variant: model.VariantFortyEight,
 		Year: &year, PriceCents: &cents, Km: &km,
 	}
 
@@ -172,14 +188,14 @@ func TestTheInstagramIron1200ReachesTalvez(t *testing.T) {
 }
 
 func TestAbsentLocationStillCannotReachMatch(t *testing.T) {
-	verdict, axes := Evaluate(listing(model.BikeSportster1200, 2019, 4000000, "", ""), criteria())
+	verdict, axes := Evaluate(listing(model.BikeSportster1200, 2016, 4000000, "", ""), criteria())
 	if verdict == model.VerdictMatch {
 		t.Errorf("Evaluate = match with no location at all (axes: %v), want maybe", axes)
 	}
 }
 
 func TestAKnownLocationOutsideTheTargetIsStillRejected(t *testing.T) {
-	verdict, axes := Evaluate(listing(model.BikeSportster1200, 2019, 4000000, "belo horizonte", "MG"), criteria())
+	verdict, axes := Evaluate(listing(model.BikeSportster1200, 2016, 4000000, "belo horizonte", "MG"), criteria())
 	if axes[model.AxisLocation] != model.VerdictReject {
 		t.Errorf("location axis = %q, want reject: a city that was written and is far away is not unknown",
 			axes[model.AxisLocation])
@@ -190,8 +206,8 @@ func TestAKnownLocationOutsideTheTargetIsStillRejected(t *testing.T) {
 }
 
 func TestAStateOnlyLocationIsUnaffected(t *testing.T) {
-	_, axes := Evaluate(listing(model.BikeSportster1200, 2019, 4000000, "", "SP"), criteria())
+	_, axes := Evaluate(listing(model.BikeSportster1200, 2016, 4000000, "", "RJ"), criteria())
 	if axes[model.AxisLocation] != model.VerdictMaybe {
-		t.Errorf("location axis = %q, want maybe for a target state without a city", axes[model.AxisLocation])
+		t.Errorf("location axis = %q, want maybe for the target state without a city", axes[model.AxisLocation])
 	}
 }

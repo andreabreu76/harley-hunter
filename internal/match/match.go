@@ -1,6 +1,8 @@
 package match
 
 import (
+	"slices"
+
 	"github.com/andreabreu76/harley-hunter/internal/config"
 	"github.com/andreabreu76/harley-hunter/internal/model"
 	"github.com/andreabreu76/harley-hunter/internal/normalize"
@@ -31,8 +33,11 @@ func evaluateYear(year *int, c config.MatchCriteria) model.Verdict {
 	if year == nil {
 		return model.VerdictMaybe
 	}
-	if *year >= c.MinYear {
+	if slices.Contains(c.Years, *year) {
 		return model.VerdictMatch
+	}
+	if slices.Contains(c.MaybeYears, *year) {
+		return model.VerdictMaybe
 	}
 	return model.VerdictReject
 }

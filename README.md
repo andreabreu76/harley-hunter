@@ -11,14 +11,14 @@ A cada rodada o hunter abre as URLs de busca configuradas para cada fonte, lê o
 anúncios, normaliza o que veio (preço em centavos, ano, quilometragem, cidade) e
 classifica cada um em três baldes, segundo os critérios do config:
 
-- **match** — Sportster 1200, ano e preço dentro do alvo;
-- **maybe** — 883, Sportster S, Sportster sem cilindrada escrita, ou preço na
-  faixa de tolerância;
+- **match** — Sportster 1200, ano e preço dentro do alvo, na região do Rio;
+- **maybe** — 883, Sportster S, Sportster sem cilindrada escrita, preço na faixa
+  de tolerância, ou anúncio que não escreveu a cidade;
 - **rejeitado** — fora, ou nem é a moto certa.
 
-O ano mínimo não é uma lista: o config diz `max_age_years` e o corte é o ano
-corrente menos essa idade, porque o financiamento não aprova moto acima de dez
-anos. Na virada do ano o corte anda sozinho.
+A praça é o Rio de Janeiro: a região metropolitana é match, o resto do estado é
+maybe e qualquer outro estado é rejeitado (`targetStates`, em
+`internal/normalize/regions.go`).
 
 Anúncio novo em match, e queda de preço abaixo do menor valor já comunicado,
 viram notificação na área de trabalho. Anúncio que some das buscas é marcado como
@@ -88,7 +88,7 @@ Na primeira execução de qualquer comando, se ainda não houver `config.yaml`, 
 hunter escreve um esqueleto ali — com as seis fontes listadas, sem URLs e sem
 critérios. Um config incompleto assim não derruba o daemon: ele sobe, serve o
 dashboard e não coleta, registrando no log o que falta, até o arquivo ganhar
-URLs, idade máxima e preço máximo. Se o config quebrar depois, com o daemon já
+URLs, anos e preço máximo. Se o config quebrar depois, com o daemon já
 coletando, é essa mesma linha que conta o que aconteceu — uma vez, e de novo só
 quando o motivo mudar.
 

@@ -42,8 +42,7 @@ func (f funcSource) Fetch(ctx context.Context) ([]model.RawListing, error) {
 func testConfig() config.Config {
 	return config.Config{
 		Match: config.MatchCriteria{
-			MaxAgeYears:        10,
-			MinYear:            2016,
+			Years:              []int{2016},
 			MaxPriceCents:      4500000,
 			MaybeMaxPriceCents: 5500000,
 		},
@@ -66,11 +65,11 @@ func harley(source, id string) model.RawListing {
 		Source:       source,
 		ExternalID:   id,
 		URL:          "https://example.com/" + id,
-		Title:        "Harley Davidson Iron 1200",
+		Title:        "Harley Davidson Forty Eight",
 		PriceText:    "R$ 43.000",
-		YearText:     "2019",
+		YearText:     "2016",
 		KmText:       "12.000 km",
-		LocationText: "Curitiba - PR",
+		LocationText: "Rio de Janeiro - RJ",
 	}
 }
 
