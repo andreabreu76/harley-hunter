@@ -58,8 +58,8 @@ source_urls:
   olx:
     - https://www.olx.com.br/x
 match:
-  years: [2014]
-  max_price_cents: 7500000
+  years: [2016]
+  max_price_cents: 4500000
 crawl:
   interval_hours: 12
 `

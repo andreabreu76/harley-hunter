@@ -79,12 +79,8 @@ type modelRef struct {
 }
 
 var models = []modelRef{
-	{model.BikeStreetGlide, model.VariantBase, "5760", "FLHX"},
-	{model.BikeStreetGlide, model.VariantSpecial, "7057", "FLHXS"},
-	{model.BikeStreetGlide, model.VariantCVO, "7053", "FLHXSE"},
-	{model.BikeRoadGlide, model.VariantBase, "11056", "FLTRX"},
-	{model.BikeRoadGlide, model.VariantSpecial, "8139", "FLTRXS"},
-	{model.BikeRoadGlide, model.VariantCVO, "8135", "FLTRXSE"},
-	{model.BikeElectraGlide, model.VariantUnknown, "5761", "FLHTK"},
-	{model.BikeUltra, model.VariantUnknown, "5761", "FLHTK"},
+	{model.BikeSportster1200, model.VariantFortyEight, "6719", "XL 1200X"},
+	{model.BikeSportster1200, model.VariantCustom, "6820", "XL 1200 CUSTOM"},
+	{model.BikeSportster1200, model.VariantRoadster, "7863", "XL 1200 CX"},
+	{model.BikeSportster1200, model.VariantIron, "8556", "XL 1200NS"},
 }

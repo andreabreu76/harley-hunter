@@ -61,19 +61,19 @@ func TestLocationTier(t *testing.T) {
 		state string
 		want  string
 	}{
-		{"sao paulo", "SP", "metro"},
-		{"guarulhos", "SP", "metro"},
+		{"rio de janeiro", "RJ", "metro"},
 		{"niteroi", "RJ", "metro"},
-		{"sao jose dos pinhais", "PR", "metro"},
-		{"campinas", "SP", "state"},
-		{"londrina", "PR", "state"},
+		{"marica", "RJ", "metro"},
+		{"petropolis", "RJ", "metro"},
+		{"volta redonda", "RJ", "state"},
 		{"belo horizonte", "MG", "outside"},
 		{"", "", "outside"},
 		{"niteroi", "", "metro"},
-		{"embu guacu", "SP", "metro"},
-		{"lapa", "SP", "state"},
-		{"campinas", "SP", "state"},
-		{"volta redonda", "RJ", "state"},
+		{"sao paulo", "SP", "outside"},
+		{"guarulhos", "SP", "outside"},
+		{"sao jose dos pinhais", "PR", "outside"},
+		{"campinas", "SP", "outside"},
+		{"londrina", "PR", "outside"},
 	}
 	for _, c := range cases {
 		t.Run(c.city+"/"+c.state, func(t *testing.T) {

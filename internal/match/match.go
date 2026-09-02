@@ -20,9 +20,9 @@ func Evaluate(l model.Listing, c config.MatchCriteria) (model.Verdict, map[strin
 
 func evaluateBike(bike string) model.Verdict {
 	switch bike {
-	case model.BikeStreetGlide, model.BikeRoadGlide:
+	case model.BikeSportster1200:
 		return model.VerdictMatch
-	case model.BikeElectraGlide, model.BikeUltra, model.BikeTouringUnknown:
+	case model.BikeSportster883, model.BikeSportsterS, model.BikeSportsterUnknown:
 		return model.VerdictMaybe
 	default:
 		return model.VerdictReject

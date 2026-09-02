@@ -103,7 +103,7 @@ func cityKey(s string) string {
 
 func LocationTier(city, state string) string {
 	if city != "" {
-		if metroState, ok := metroCities[cityKey(city)]; ok {
+		if metroState, ok := metroCities[cityKey(city)]; ok && targetStates[metroState] {
 			if state == "" || state == metroState {
 				return "metro"
 			}

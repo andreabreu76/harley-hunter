@@ -11,8 +11,6 @@ import (
 
 const quoteURL = "https://fipe.parallelum.com.br/api/v2/motorcycles/brands/77/models/"
 
-var watchedYears = []int{2013, 2014, 2015, 2016}
-
 type PageFetcher interface {
 	FetchPage(ctx context.Context, url string) (string, error)
 }
@@ -24,7 +22,7 @@ type Store interface {
 
 var outageOnce sync.Once
 
-func Refresh(ctx context.Context, fetcher PageFetcher, s Store, now time.Time) (int, error) {
+func Refresh(ctx context.Context, fetcher PageFetcher, s Store, now time.Time, years []int) (int, error) {
 	fetched, err := s.FipeFetchedAt()
 	if err != nil {
 		reportOutage("fipe: reading the stored references: %v", err)
@@ -33,7 +31,7 @@ func Refresh(ctx context.Context, fetcher PageFetcher, s Store, now time.Time) (
 
 	stored := 0
 	for _, ref := range models {
-		for _, year := range watchedYears {
+		for _, year := range years {
 			if ctx.Err() != nil {
 				return stored, nil
 			}

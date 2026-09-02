@@ -20,24 +20,24 @@ func readFixture(t *testing.T, name string) string {
 }
 
 func TestParseQuoteReadsTheOwnerAnchor(t *testing.T) {
-	q, err := ParseQuote(strings.NewReader(readFixture(t, "value-5760-2014.json")))
+	q, err := ParseQuote(strings.NewReader(readFixture(t, "value-6719-2016.json")))
 	if err != nil {
 		t.Fatalf("ParseQuote: %v", err)
 	}
-	if q.Code != "810059-4" {
-		t.Errorf("Code = %q, want 810059-4: the Street Glide FLHX the owner watches", q.Code)
+	if q.Code != "810066-7" {
+		t.Errorf("Code = %q, want 810066-7: the cheapest Sportster 1200 the owner can still finance", q.Code)
 	}
-	if q.Model != "STREET GLIDE FLHX" {
+	if q.Model != "XL 1200X FORTY EIGHT SPORTSTER" {
 		t.Errorf("Model = %q", q.Model)
 	}
-	if q.Year != 2014 {
-		t.Errorf("Year = %d, want 2014", q.Year)
+	if q.Year != 2016 {
+		t.Errorf("Year = %d, want 2016", q.Year)
 	}
-	if q.PriceCents != 6920700 {
-		t.Errorf("PriceCents = %d, want 6920700 for R$ 69.207,00", q.PriceCents)
+	if q.PriceCents != 4698800 {
+		t.Errorf("PriceCents = %d, want 4698800 for R$ 46.988,00", q.PriceCents)
 	}
-	if q.Month != "agosto de 2026" {
-		t.Errorf("Month = %q", q.Month)
+	if q.Month == "" {
+		t.Error("Month is empty, want the reference month fipe published")
 	}
 }
 
@@ -47,12 +47,14 @@ func TestParseQuoteReadsEveryCommittedFixture(t *testing.T) {
 		code  string
 		cents int64
 	}{
-		{"value-5760-2013.json", "810059-4", 6751900},
-		{"value-7057-2015.json", "810071-3", 7464500},
-		{"value-7057-2016.json", "810071-3", 7735700},
-		{"value-7053-2015.json", "810070-5", 8406200},
-		{"value-5761-2013.json", "810060-8", 6554800},
-		{"value-5761-2016.json", "810060-8", 7482900},
+		{"value-6719-2017.json", "810066-7", 4816300},
+		{"value-6719-2019.json", "810066-7", 5452200},
+		{"value-6820-2016.json", "810067-5", 4712700},
+		{"value-6820-2017.json", "810067-5", 4830700},
+		{"value-7863-2017.json", "810075-6", 4862800},
+		{"value-7863-2018.json", "810075-6", 4987800},
+		{"value-8556-2019.json", "810099-3", 4963500},
+		{"value-8556-2020.json", "810099-3", 5584700},
 	}
 	for _, c := range cases {
 		q, err := ParseQuote(strings.NewReader(readFixture(t, c.file)))
@@ -113,19 +115,14 @@ func TestModelTableNamesMatchWhatTheAPIPublishes(t *testing.T) {
 	}
 }
 
-func TestSharedModelCodeIsOnlyForTheSameMotorcycle(t *testing.T) {
+func TestNoModelCodeIsSharedByTwoTrims(t *testing.T) {
 	byCode := make(map[string][]string)
 	for _, ref := range models {
 		byCode[ref.ModelCode] = append(byCode[ref.ModelCode], ref.Bike+"/"+ref.Variant)
 	}
-	shared := byCode["5761"]
-	if len(shared) != 2 {
-		t.Fatalf("code 5761 maps %v, want exactly electra glide and ultra", shared)
-	}
-	for _, ref := range models {
-		if ref.ModelCode == "5761" && ref.Variant != model.VariantUnknown {
-			t.Errorf("%s maps to 5761 with variant %q: the shared code is only honest while the trim is unknown",
-				ref.Bike, ref.Variant)
+	for code, combos := range byCode {
+		if len(combos) != 1 {
+			t.Errorf("code %s maps %v, want one combo: two trims behind one quote would price the wrong bike", code, combos)
 		}
 	}
 }

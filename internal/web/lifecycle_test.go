@@ -28,7 +28,7 @@ func glide(id, title string, km int, cents int64, fingerprint string) model.List
 	year := 2015
 	return model.Listing{
 		Source: "olx", ExternalID: id, URL: "https://example.com/" + id,
-		Title: title, Bike: model.BikeStreetGlide, Year: &year, Km: &km,
+		Title: title, Bike: model.BikeSportster1200, Year: &year, Km: &km,
 		PriceCents: &cents, City: "curitiba", State: "PR",
 		Verdict: model.VerdictMatch, Fingerprint: fingerprint,
 	}

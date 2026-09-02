@@ -18,8 +18,8 @@ source_urls:
   olx:
     - https://www.olx.com.br/autos-e-pecas/motos/estado-pr?q=harley
 match:
-  years: [2014]
-  max_price_cents: 7500000
+  years: [2016]
+  max_price_cents: 4500000
 `, databasePath)
 	path := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
@@ -43,14 +43,14 @@ func TestLoadReadsCriteria(t *testing.T) {
 	if len(cfg.Sources) != 2 || cfg.Sources[0] != "olx" {
 		t.Errorf("Sources = %v, want [olx mercadolivre]", cfg.Sources)
 	}
-	if cfg.Match.MaxPriceCents != 7500000 {
-		t.Errorf("MaxPriceCents = %d, want 7500000", cfg.Match.MaxPriceCents)
+	if cfg.Match.MaxPriceCents != 4500000 {
+		t.Errorf("MaxPriceCents = %d, want 4500000", cfg.Match.MaxPriceCents)
 	}
-	if cfg.Match.MaybeMaxPriceCents != 8500000 {
-		t.Errorf("MaybeMaxPriceCents = %d, want 8500000", cfg.Match.MaybeMaxPriceCents)
+	if cfg.Match.MaybeMaxPriceCents != 5500000 {
+		t.Errorf("MaybeMaxPriceCents = %d, want 5500000", cfg.Match.MaybeMaxPriceCents)
 	}
-	if len(cfg.Match.Years) != 2 || cfg.Match.Years[0] != 2014 {
-		t.Errorf("Years = %v, want [2014 2015]", cfg.Match.Years)
+	if len(cfg.Match.Years) != 1 || cfg.Match.Years[0] != 2016 {
+		t.Errorf("Years = %v, want [2016]", cfg.Match.Years)
 	}
 }
 
@@ -144,7 +144,7 @@ func TestValidateRejectsWhatCannotCollect(t *testing.T) {
 		DatabasePath: "/tmp/hunter.db",
 		Sources:      []string{"olx"},
 		SourceURLs:   map[string][]string{"olx": {"https://www.olx.com.br/x"}},
-		Match:        MatchCriteria{Years: []int{2014}, MaxPriceCents: 7500000},
+		Match:        MatchCriteria{Years: []int{2016}, MaxPriceCents: 4500000},
 	}
 	if err := Validate(base); err != nil {
 		t.Fatalf("Validate on a complete config returned error: %v", err)

@@ -19,7 +19,7 @@ func exportListingOf(id string, verdict model.Verdict, cents int64) model.Listin
 	km := 31000
 	return model.Listing{
 		Source: model.SourceOLX, ExternalID: id, URL: "https://example.com/" + id,
-		Title: "Harley Street Glide " + id, Bike: model.BikeStreetGlide,
+		Title: "Harley Street Glide " + id, Bike: model.BikeSportster1200,
 		Variant: model.VariantBase, Year: &year, PriceCents: &cents, Km: &km,
 		City: "curitiba", State: "PR", Verdict: verdict,
 	}
@@ -356,7 +356,7 @@ func fipedStore(t *testing.T) *store.Store {
 
 	reference := fipe.Reference{
 		Code: "810055-1", Label: "FLHXS STREET GLIDE SPECIAL",
-		Bike: model.BikeStreetGlide, Variant: model.VariantBase,
+		Bike: model.BikeSportster1200, Variant: model.VariantBase,
 		Year: 2015, PriceCents: 8000000, Month: "agosto de 2026",
 	}
 	if err := s.SaveFipeReference(reference, at); err != nil {
@@ -367,7 +367,7 @@ func fipedStore(t *testing.T) *store.Store {
 	upsert(t, s, exportListingOf("f2", model.VerdictMatch, 8800000), at)
 
 	unmatched := exportListingOf("f3", model.VerdictMatch, 7200000)
-	unmatched.Bike = model.BikeRoadGlide
+	unmatched.Bike = model.BikeSportster883
 	upsert(t, s, unmatched, at)
 
 	yearless := exportListingOf("f4", model.VerdictMatch, 7200000)

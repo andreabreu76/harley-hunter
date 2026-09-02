@@ -1,6 +1,6 @@
 # harley-hunter
 
-Robô que vigia anúncios de Harley-Davidson Street Glide e Road Glide em seis
+Robô que vigia anúncios de Harley-Davidson Sportster 1200 em seis
 marketplaces brasileiros, guarda o que encontra num SQLite e avisa por
 notificação da área de trabalho quando aparece um anúncio dentro do alvo. Roda
 em macOS, Linux e Windows.
@@ -11,9 +11,14 @@ A cada rodada o hunter abre as URLs de busca configuradas para cada fonte, lê o
 anúncios, normaliza o que veio (preço em centavos, ano, quilometragem, cidade) e
 classifica cada um em três baldes, segundo os critérios do config:
 
-- **match** — ano e preço dentro do alvo;
-- **maybe** — ano ou preço na faixa de tolerância;
+- **match** — Sportster 1200, ano e preço dentro do alvo, na região do Rio;
+- **maybe** — 883, Sportster S, Sportster sem cilindrada escrita, preço na faixa
+  de tolerância, ou anúncio que não escreveu a cidade;
 - **rejeitado** — fora, ou nem é a moto certa.
+
+A praça é o Rio de Janeiro: a região metropolitana é match, o resto do estado é
+maybe e qualquer outro estado é rejeitado (`targetStates`, em
+`internal/normalize/regions.go`).
 
 Anúncio novo em match, e queda de preço abaixo do menor valor já comunicado,
 viram notificação na área de trabalho. Anúncio que some das buscas é marcado como

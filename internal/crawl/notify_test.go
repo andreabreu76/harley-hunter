@@ -35,7 +35,7 @@ func matchListing(id string) model.Listing {
 		ExternalID: id,
 		URL:        "https://example.com",
 		Title:      "Harley Street Glide",
-		Bike:       model.BikeStreetGlide,
+		Bike:       model.BikeSportster1200,
 		Year:       &year,
 		PriceCents: &cents,
 		City:       "curitiba",

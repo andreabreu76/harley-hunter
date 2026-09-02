@@ -101,8 +101,8 @@ func TestParseOLXKeepsTheStructuredModelReachable(t *testing.T) {
 			t.Fatalf("RawText = %q, want the vehicle_model property", l.RawText)
 		}
 		bike, _ := normalize.DetectBike(l.Title + " " + l.RawText)
-		if bike != model.BikeStreetGlide {
-			t.Fatalf("DetectBike = %q, want %q: the typed title needs the model code to be classified", bike, model.BikeStreetGlide)
+		if bike != model.BikeOther {
+			t.Fatalf("DetectBike = %q, want %q: the structured model reaches the classifier, which rejects a Touring", bike, model.BikeOther)
 		}
 		return
 	}

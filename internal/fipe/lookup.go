@@ -33,15 +33,34 @@ func (t *Table) Lookup(bike, variant string, year int) (*Reference, bool) {
 	if t == nil || bike == "" || year == 0 {
 		return nil, false
 	}
-	row, ok := t.rows[key(bike, variant, year)]
-	if !ok && variant == model.VariantUnknown {
-		row, ok = t.rows[key(bike, model.VariantBase, year)]
+	if row, ok := t.rows[key(bike, variant, year)]; ok {
+		row.Base = variant == model.VariantUnknown
+		return &row, true
 	}
+	if variant != model.VariantUnknown && variant != model.VariantBase {
+		return nil, false
+	}
+	row, ok := t.cheapestOf(bike, year)
 	if !ok {
 		return nil, false
 	}
-	row.Base = variant == model.VariantUnknown
+	row.Base = true
 	return &row, true
+}
+
+func (t *Table) cheapestOf(bike string, year int) (Reference, bool) {
+	var cheapest Reference
+	found := false
+	for _, row := range t.rows {
+		if row.Bike != bike || row.Year != year {
+			continue
+		}
+		if !found || row.PriceCents < cheapest.PriceCents ||
+			(row.PriceCents == cheapest.PriceCents && row.Code < cheapest.Code) {
+			cheapest, found = row, true
+		}
+	}
+	return cheapest, found
 }
 
 func key(bike, variant string, year int) string {

@@ -36,9 +36,9 @@ func drainAlerts(t *testing.T, s *store.Store) {
 
 func TestNotifyAlertsThePriceDropLeadingWithTheSignal(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 44.000"))
 	drainAlerts(t, s)
-	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 40.000"))
 
 	n := &recordingNotifier{}
 	sent, err := Notify(context.Background(), s, n, 5, nil)
@@ -51,7 +51,7 @@ func TestNotifyAlertsThePriceDropLeadingWithTheSignal(t *testing.T) {
 	if !strings.HasPrefix(n.messages[0], "▼ R$ 4.000: ") {
 		t.Errorf("alert = %q, want it to lead with the drop", n.messages[0])
 	}
-	if !strings.Contains(n.messages[0], "R$ 68.000") {
+	if !strings.Contains(n.messages[0], "R$ 40.000") {
 		t.Errorf("alert = %q, want the price it dropped to", n.messages[0])
 	}
 	if n.alerts[0].URL != "https://example.com/1" {
@@ -61,9 +61,9 @@ func TestNotifyAlertsThePriceDropLeadingWithTheSignal(t *testing.T) {
 
 func TestNotifyKeepsADropPendingWhenTheCapIsSpent(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 44.000"))
 	drainAlerts(t, s)
-	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"), pricedAt("olx", "9", "R$ 71.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 40.000"), pricedAt("olx", "9", "R$ 43.000"))
 
 	n := &recordingNotifier{}
 	sent, err := Notify(context.Background(), s, n, 1, nil)
@@ -89,9 +89,9 @@ func TestNotifyKeepsADropPendingWhenTheCapIsSpent(t *testing.T) {
 
 func TestNotifyKeepsADropPendingWhenDeliveryFails(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 44.000"))
 	drainAlerts(t, s)
-	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 40.000"))
 
 	if _, err := Notify(context.Background(), s, &recordingNotifier{failAt: 1}, 5, nil); err == nil {
 		t.Fatal("Notify should surface the delivery error")
@@ -109,10 +109,10 @@ func TestNotifyKeepsADropPendingWhenDeliveryFails(t *testing.T) {
 
 func TestNotifyCollapsesTwoDropsIntoTheAccumulatedOne(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 44.000"))
 	drainAlerts(t, s)
-	runWith(t, s, pricedAt("olx", "1", "R$ 70.000"))
-	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 42.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 40.000"))
 
 	n := &recordingNotifier{}
 	sent, err := Notify(context.Background(), s, n, 5, nil)
@@ -129,9 +129,9 @@ func TestNotifyCollapsesTwoDropsIntoTheAccumulatedOne(t *testing.T) {
 
 func TestNotifyStaysQuietWhenThePriceGoesBackUp(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 40.000"))
 	drainAlerts(t, s)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 44.000"))
 
 	n := &recordingNotifier{}
 	sent, err := Notify(context.Background(), s, n, 5, nil)
@@ -142,7 +142,7 @@ func TestNotifyStaysQuietWhenThePriceGoesBackUp(t *testing.T) {
 		t.Errorf("sent = %d, want 0: a price rise is not news", sent)
 	}
 
-	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 40.000"))
 	back := &recordingNotifier{}
 	sent, err = Notify(context.Background(), s, back, 5, nil)
 	if err != nil {
@@ -155,9 +155,9 @@ func TestNotifyStaysQuietWhenThePriceGoesBackUp(t *testing.T) {
 
 func TestNotifyRanksTheBiggerDiscountFirst(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"), pricedAt("olx", "2", "R$ 72.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 44.000"), pricedAt("olx", "2", "R$ 44.000"))
 	drainAlerts(t, s)
-	runWith(t, s, pricedAt("olx", "1", "R$ 70.000"), pricedAt("olx", "2", "R$ 64.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 42.000"), pricedAt("olx", "2", "R$ 36.000"))
 
 	n := &recordingNotifier{}
 	sent, err := Notify(context.Background(), s, n, 1, nil)
@@ -174,13 +174,13 @@ func TestNotifyRanksTheBiggerDiscountFirst(t *testing.T) {
 
 func TestNotifyRanksTheDeeperFipeDiscountFirst(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 72.000"), pricedAt("olx", "2", "R$ 60.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 44.000"), pricedAt("olx", "2", "R$ 36.000"))
 
 	refs := fipe.NewTable([]fipe.Reference{{
-		Bike:       model.BikeStreetGlide,
-		Variant:    model.VariantSpecial,
-		Year:       2015,
-		PriceCents: 7500000,
+		Bike:       model.BikeSportster1200,
+		Variant:    model.VariantFortyEight,
+		Year:       2016,
+		PriceCents: 4900000,
 	}})
 
 	n := &recordingNotifier{}
@@ -191,21 +191,21 @@ func TestNotifyRanksTheDeeperFipeDiscountFirst(t *testing.T) {
 	if sent != 1 {
 		t.Fatalf("sent = %d, want 1", sent)
 	}
-	if !strings.Contains(n.messages[0], "R$ 60.000") {
+	if !strings.Contains(n.messages[0], "R$ 36.000") {
 		t.Errorf("alert = %q, want the listing furthest below the fipe first", n.messages[0])
 	}
 }
 
 func TestNotifyAlertsOnceWhenADropAlsoFlipsMaybeToMatch(t *testing.T) {
 	s := openStore(t)
-	runWith(t, s, pricedAt("olx", "1", "R$ 80.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 52.000"))
 
 	rows, err := s.ListByVerdict(model.VerdictMaybe)
 	if err != nil || len(rows) != 1 {
 		t.Fatalf("seed should be a maybe: %d rows, %v", len(rows), err)
 	}
 
-	runWith(t, s, pricedAt("olx", "1", "R$ 68.000"))
+	runWith(t, s, pricedAt("olx", "1", "R$ 40.000"))
 
 	n := &recordingNotifier{}
 	sent, err := Notify(context.Background(), s, n, 5, nil)
